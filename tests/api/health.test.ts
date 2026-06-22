@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import app from "../../worker/index";
+import { createApi } from "../../worker/api";
 
 describe("health API", () => {
   it("returns ok for GET /api/health", async () => {
+    const app = createApi();
     const response = await app.request("/api/health");
 
     expect(response.status).toBe(200);

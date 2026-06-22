@@ -1,4 +1,5 @@
 import { createApi } from "./api";
+import { D1Repository } from "./repository/d1-repository";
 
 export interface Env {
   DB: D1Database;
@@ -6,6 +7,9 @@ export interface Env {
   APP_ENCRYPTION_KEY?: string;
 }
 
-const app = createApi();
-
-export default app;
+export default {
+  fetch(request: Request, env: Env, executionContext: ExecutionContext) {
+    const app = createApi({ repository: new D1Repository(env.DB) });
+    return app.fetch(request, env, executionContext);
+  }
+};
