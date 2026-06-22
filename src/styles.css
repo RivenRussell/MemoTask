@@ -192,6 +192,13 @@ button {
   margin: 0;
 }
 
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
 .memo-title {
   margin: 22px 0 12px;
   color: #273238;
@@ -365,6 +372,18 @@ textarea {
 
 .secondary-action {
   color: #6c8fa3;
+}
+
+.icon-only-action {
+  width: 44px;
+  padding: 0;
+}
+
+.primary-action:disabled,
+.secondary-action:disabled,
+.icon-text-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .mobile-bottom-nav {

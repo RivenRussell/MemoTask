@@ -15,6 +15,7 @@ export default function App({ client }: { client?: ApiClient }) {
       {state.page === "memos" ? (
         <MemosPage
           memos={state.memos}
+          onMoveMemo={(memoId, direction) => void state.moveMemo(memoId, direction)}
           onOpenMemo={state.openMemoDetail}
           onToggleTodo={(todoId) => void state.toggleTodo(todoId)}
         />

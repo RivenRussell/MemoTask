@@ -49,6 +49,7 @@ export interface AppState {
   analyzeDraft: () => Promise<void>;
   publishDraft: () => Promise<void>;
   toggleTodo: (todoId: string) => Promise<void>;
+  moveMemo: (memoId: string, direction: "up" | "down") => Promise<void>;
   updateActiveMemo: (input: { title: string; content: string }) => Promise<void>;
   addActiveMemoTodo: (title: string) => Promise<void>;
   updateActiveMemoTodo: (todoId: string, title: string) => Promise<void>;
@@ -301,6 +302,22 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     });
   }
 
+  async function moveMemo(memoId: string, direction: "up" | "down") {
+    const currentIndex = memos.findIndex((memo) => memo.id === memoId);
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= memos.length) {
+      return;
+    }
+
+    const nextMemos = [...memos];
+    [nextMemos[currentIndex], nextMemos[targetIndex]] = [nextMemos[targetIndex], nextMemos[currentIndex]];
+
+    await run(async () => {
+      setMemos(nextMemos);
+      setMemos(await client.reorderMemos(nextMemos.map((memo) => memo.id)));
+    });
+  }
+
   async function updateActiveMemo(input: { title: string; content: string }) {
     if (!activeMemo) {
       return;
@@ -501,6 +518,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     analyzeDraft,
     publishDraft,
     toggleTodo,
+    moveMemo,
     updateActiveMemo,
     addActiveMemoTodo,
     updateActiveMemoTodo,

@@ -4,10 +4,12 @@ import type { Memo } from "../types";
 
 export function MemosPage({
   memos,
+  onMoveMemo,
   onOpenMemo,
   onToggleTodo
 }: {
   memos: Memo[];
+  onMoveMemo: (memoId: string, direction: "up" | "down") => void;
   onOpenMemo: (memoId: string) => void;
   onToggleTodo: (todoId: string) => void;
 }) {
@@ -25,7 +27,17 @@ export function MemosPage({
           <PreviewMemoCard />
         </>
       ) : (
-        memos.map((memo) => <MemoCard key={memo.id} memo={memo} onOpen={onOpenMemo} onToggleTodo={onToggleTodo} />)
+        memos.map((memo, index) => (
+          <MemoCard
+            canMoveDown={index < memos.length - 1}
+            canMoveUp={index > 0}
+            key={memo.id}
+            memo={memo}
+            onMove={onMoveMemo}
+            onOpen={onOpenMemo}
+            onToggleTodo={onToggleTodo}
+          />
+        ))
       )}
     </div>
   );

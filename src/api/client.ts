@@ -58,6 +58,15 @@ export class ApiClient {
     return body.memo;
   }
 
+  async reorderMemos(memoIds: string[]): Promise<Memo[]> {
+    const body = await this.request<{ memos: Memo[] }>("/api/memos/reorder", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ memoIds })
+    });
+    return body.memos;
+  }
+
   async archiveMemo(memoId: string): Promise<Memo> {
     const body = await this.request<{ memo: Memo }>(`/api/memos/${memoId}/archive`, { method: "POST" });
     return body.memo;
