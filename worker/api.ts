@@ -1,12 +1,15 @@
 import { Hono } from "hono";
-import { moveMemoToHistory, shouldAutoArchiveMemo, toggleTodoStatus } from "./domain/state-machines";
-import { MemoryRepository } from "./repository/memory-repository";
-import type { MemoRepository } from "./repository/types";
+import { moveMemoToHistory, restoreMemoFromHistory, shouldAutoArchiveMemo, toggleTodoStatus } from "./domain/state-machines";
+import { DEFAULT_PROMPT, MemoryRepository } from "./repository/memory-repository";
+import type { AiSettings, MemoRepository } from "./repository/types";
 
 interface ApiOptions {
   repository?: MemoRepository;
   now?: () => string;
+  fetchAi?: (request: Request) => Promise<Response>;
 }
+
+const undoOperations = new Map<string, { memoIds: string[]; expiresAt: string }>();
 
 function getNow(options?: ApiOptions): string {
   return options?.now?.() ?? new Date().toISOString();
@@ -14,6 +17,43 @@ function getNow(options?: ApiOptions): string {
 
 async function readJson<T>(context: { req: { json: () => Promise<T> } }): Promise<T> {
   return context.req.json();
+}
+
+function publicAiSettings(settings: AiSettings) {
+  return {
+    baseUrl: settings.baseUrl,
+    model: settings.model,
+    apiKeyMask: settings.apiKeyMask,
+    promptTemplate: settings.promptTemplate,
+    updatedAt: settings.updatedAt
+  };
+}
+
+function extractAiContent(payload: any): string {
+  return payload?.choices?.[0]?.message?.content ?? payload?.content ?? "";
+}
+
+function parseAiJson(content: string): { title: string; todos: Array<{ title: string; notes: string | null }> } {
+  const cleaned = content
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  const parsed = JSON.parse(cleaned) as { title?: unknown; todos?: unknown };
+  if (typeof parsed.title !== "string" || !Array.isArray(parsed.todos)) {
+    throw new Error("AI response shape is invalid");
+  }
+
+  return {
+    title: parsed.title,
+    todos: parsed.todos
+      .filter((todo): todo is { title: unknown; notes?: unknown } => Boolean(todo) && typeof todo === "object")
+      .map((todo) => ({
+        title: typeof todo.title === "string" ? todo.title.trim() : "",
+        notes: typeof todo.notes === "string" && todo.notes.trim() ? todo.notes.trim() : null
+      }))
+      .filter((todo) => todo.title.length > 0)
+  };
 }
 
 export function createApi(options: ApiOptions = {}) {
@@ -72,6 +112,61 @@ export function createApi(options: ApiOptions = {}) {
     return context.json({ memos });
   });
 
+  app.get("/api/memos/:id", async (context) => {
+    const memo = await repository.findMemo(context.req.param("id"));
+    if (!memo || memo.deletedAt !== null) {
+      return context.json({ error: { code: "NOT_FOUND", message: "Memo 不存在" } }, 404);
+    }
+
+    return context.json({ memo });
+  });
+
+  app.patch("/api/memos/:id", async (context) => {
+    const memo = await repository.findMemo(context.req.param("id"));
+    if (!memo || memo.deletedAt !== null) {
+      return context.json({ error: { code: "NOT_FOUND", message: "Memo 不存在" } }, 404);
+    }
+
+    const body = await readJson<{ title?: string; content?: string }>(context);
+    const updated = await repository.saveMemo({
+      ...memo,
+      title: body.title?.trim() || memo.title,
+      content: body.content ?? memo.content,
+      updatedAt: getNow(options)
+    });
+    return context.json({ memo: updated });
+  });
+
+  app.post("/api/memos/:id/archive", async (context) => {
+    const memo = await repository.findMemo(context.req.param("id"));
+    if (!memo || memo.status !== "active" || memo.deletedAt !== null) {
+      return context.json({ error: { code: "NOT_FOUND", message: "Memo 不存在" } }, 404);
+    }
+
+    const archived = await repository.saveMemo(moveMemoToHistory(memo, "archived", getNow(options)));
+    return context.json({ memo: archived });
+  });
+
+  app.post("/api/memos/:id/restore", async (context) => {
+    const memo = await repository.findMemo(context.req.param("id"));
+    if (!memo || memo.status !== "history" || memo.deletedAt !== null) {
+      return context.json({ error: { code: "NOT_FOUND", message: "Memo 不存在" } }, 404);
+    }
+
+    const restored = await repository.saveMemo(restoreMemoFromHistory(memo, getNow(options)));
+    return context.json({ memo: restored });
+  });
+
+  app.post("/api/memos/reorder", async (context) => {
+    const body = await readJson<{ memoIds?: string[] }>(context);
+    if (!Array.isArray(body.memoIds)) {
+      return context.json({ error: { code: "VALIDATION_FAILED", message: "排序数据无效" } }, 400);
+    }
+
+    const memos = await repository.reorderMemos(body.memoIds, getNow(options));
+    return context.json({ memos });
+  });
+
   app.post("/api/todos/:id/toggle", async (context) => {
     const todo = await repository.findTodo(context.req.param("id"));
     if (!todo) {
@@ -97,6 +192,118 @@ export function createApi(options: ApiOptions = {}) {
   app.get("/api/history", async (context) => {
     const memos = await repository.listHistoryMemos();
     return context.json({ memos });
+  });
+
+  app.get("/api/history/search", async (context) => {
+    const memos = await repository.searchHistoryMemos(context.req.query("q") ?? "");
+    return context.json({ memos });
+  });
+
+  app.post("/api/history/bulk-delete", async (context) => {
+    const body = await readJson<{ memoIds?: string[] }>(context);
+    if (!Array.isArray(body.memoIds) || body.memoIds.length === 0) {
+      return context.json({ error: { code: "VALIDATION_FAILED", message: "请选择要删除的 Memo" } }, 400);
+    }
+
+    const now = getNow(options);
+    const deleted = await repository.softDeleteHistoryMemos(body.memoIds, now);
+    const operation = {
+      id: `undo-${crypto.randomUUID()}`,
+      type: "history_bulk_delete",
+      memoIds: deleted.map((memo) => memo.id),
+      expiresAt: new Date(Date.parse(now) + 1000 * 60 * 5).toISOString()
+    };
+    undoOperations.set(operation.id, { memoIds: operation.memoIds, expiresAt: operation.expiresAt });
+    return context.json({ operation, deletedCount: deleted.length });
+  });
+
+  app.post("/api/history/undo-delete", async (context) => {
+    const body = await readJson<{ operationId?: string }>(context);
+    const operation = body.operationId ? undoOperations.get(body.operationId) : undefined;
+    if (!operation) {
+      return context.json({ error: { code: "NOT_FOUND", message: "撤销操作不存在" } }, 404);
+    }
+
+    const restored = await repository.restoreDeletedMemos(operation.memoIds, getNow(options));
+    undoOperations.delete(body.operationId ?? "");
+    return context.json({ restored });
+  });
+
+  app.get("/api/export/json", async (context) => {
+    const memos = await repository.listExportableMemos();
+    return context.json({
+      exportedAt: getNow(options),
+      version: 1,
+      memos,
+      aiSettings: {
+        model: "dsv4-pro",
+        hasApiKey: false
+      }
+    });
+  });
+
+  app.get("/api/ai/settings", async (context) => {
+    const settings = await repository.getAiSettings(getNow(options));
+    return context.json({ settings: publicAiSettings(settings) });
+  });
+
+  app.put("/api/ai/settings", async (context) => {
+    const body = await readJson<{ baseUrl?: string; model?: string; apiKey?: string; promptTemplate?: string }>(context);
+    const settings = await repository.saveAiSettings(
+      {
+        baseUrl: body.baseUrl ?? "",
+        model: body.model || "dsv4-pro",
+        apiKey: body.apiKey,
+        promptTemplate: body.promptTemplate || DEFAULT_PROMPT
+      },
+      getNow(options)
+    );
+    return context.json({ settings: publicAiSettings(settings) });
+  });
+
+  app.post("/api/ai/reset-prompt", async (context) => {
+    const settings = await repository.resetAiPrompt(DEFAULT_PROMPT, getNow(options));
+    return context.json({ settings: publicAiSettings(settings) });
+  });
+
+  app.post("/api/ai/analyze-draft", async (context) => {
+    const body = await readJson<{ draftId?: string }>(context);
+    const settings = await repository.getAiSettings(getNow(options));
+    if (!settings.baseUrl || !settings.encryptedApiKey) {
+      return context.json({ error: { code: "AI_UNAVAILABLE", message: "请先在 Settings 配置 AI API" } }, 400);
+    }
+
+    const draft = body.draftId ? await repository.findMemo(body.draftId) : null;
+    if (!draft || draft.status !== "draft") {
+      return context.json({ error: { code: "NOT_FOUND", message: "草稿不存在" } }, 404);
+    }
+
+    const fetchAi = options.fetchAi ?? fetch;
+    const response = await fetchAi(
+      new Request(`${settings.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: settings.model,
+          messages: [
+            { role: "system", content: settings.promptTemplate },
+            { role: "user", content: draft.content }
+          ]
+        })
+      })
+    );
+
+    if (!response.ok) {
+      return context.json({ error: { code: "AI_FAILED", message: "AI 分析失败" } }, 502);
+    }
+
+    try {
+      const payload = await response.json();
+      const result = parseAiJson(extractAiContent(payload));
+      return context.json({ result });
+    } catch {
+      return context.json({ error: { code: "AI_INVALID_JSON", message: "AI 返回格式无效" } }, 502);
+    }
   });
 
   return app;
