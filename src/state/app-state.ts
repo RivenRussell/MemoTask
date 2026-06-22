@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ApiClient, apiClient } from "../api/client";
 import type { AiSettingsView, DraftTodoInput, Memo, PublishMemoInput, SyncStatusView } from "../types";
 
-export type Page = "capture" | "memos" | "settings" | "history";
+export type Page = "capture" | "memos" | "memoDetail" | "settings" | "history";
 export type PrimaryPage = "capture" | "memos" | "settings";
 
 export interface DraftState {
@@ -23,6 +23,7 @@ export interface AppState {
   activePrimary: PrimaryPage;
   title: string;
   memos: Memo[];
+  activeMemo: Memo | null;
   historyMemos: Memo[];
   historyQuery: string;
   recentDrafts: Memo[];
@@ -34,10 +35,12 @@ export interface AppState {
   syncStatus: SyncStatusView | null;
   settingsMessage: string | null;
   historyMessage: string | null;
+  detailMessage: string | null;
   canUndoHistoryDelete: boolean;
   isLoading: boolean;
   error: string | null;
   setPage: (page: Page) => void;
+  openMemoDetail: (memoId: string) => void;
   updateDraft: (patch: Partial<DraftState>) => void;
   updateAiSettingsDraft: (patch: Partial<AiSettingsDraft>) => void;
   loadRecentDraft: (draftId: string) => void;
@@ -46,6 +49,11 @@ export interface AppState {
   analyzeDraft: () => Promise<void>;
   publishDraft: () => Promise<void>;
   toggleTodo: (todoId: string) => Promise<void>;
+  updateActiveMemo: (input: { title: string; content: string }) => Promise<void>;
+  addActiveMemoTodo: (title: string) => Promise<void>;
+  updateActiveMemoTodo: (todoId: string, title: string) => Promise<void>;
+  deleteActiveMemoTodo: (todoId: string) => Promise<void>;
+  archiveActiveMemo: () => Promise<void>;
   restoreMemo: (memoId: string) => Promise<void>;
   refreshMemos: () => Promise<void>;
   refreshHistory: () => Promise<void>;
@@ -75,6 +83,7 @@ const defaultAiSettingsDraft: AiSettingsDraft = {
 export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   const [page, setPageState] = useState<Page>("memos");
   const [memos, setMemos] = useState<Memo[]>([]);
+  const [activeMemo, setActiveMemo] = useState<Memo | null>(null);
   const [historyMemos, setHistoryMemos] = useState<Memo[]>([]);
   const [historyQuery, setHistoryQuery] = useState("");
   const [recentDrafts, setRecentDrafts] = useState<Memo[]>([]);
@@ -87,10 +96,11 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   const [syncStatus, setSyncStatus] = useState<SyncStatusView | null>(null);
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
   const [historyMessage, setHistoryMessage] = useState<string | null>(null);
+  const [detailMessage, setDetailMessage] = useState<string | null>(null);
   const [lastHistoryDeleteOperationId, setLastHistoryDeleteOperationId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const activePrimary = page === "history" ? "memos" : page;
+  const activePrimary = page === "history" || page === "memoDetail" ? "memos" : page;
   const title = useMemo(() => pageTitle(page), [page]);
 
   useEffect(() => {
@@ -151,6 +161,17 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     if (page === "capture") {
       void refreshDrafts();
     }
+  }
+
+  function openMemoDetail(memoId: string) {
+    const selectedMemo = memos.find((memo) => memo.id === memoId);
+    if (!selectedMemo) {
+      return;
+    }
+
+    setActiveMemo(selectedMemo);
+    setDetailMessage(null);
+    setPageState("memoDetail");
   }
 
   function updateDraft(patch: Partial<DraftState>) {
@@ -274,7 +295,77 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   async function toggleTodo(todoId: string) {
     await run(async () => {
       await client.toggleTodo(todoId);
+      const nextMemos = await client.listMemos();
+      setMemos(nextMemos);
+      setActiveMemo((current) => nextMemos.find((memo) => memo.id === current?.id) ?? current);
+    });
+  }
+
+  async function updateActiveMemo(input: { title: string; content: string }) {
+    if (!activeMemo) {
+      return;
+    }
+
+    await run(async () => {
+      const updated = await client.updateMemo(activeMemo.id, input);
+      setActiveMemo(updated);
       setMemos(await client.listMemos());
+      setDetailMessage("Memo 已保存");
+    });
+  }
+
+  async function addActiveMemoTodo(title: string) {
+    const trimmed = title.trim();
+    if (!activeMemo || !trimmed) {
+      return;
+    }
+
+    await run(async () => {
+      await client.createTodo(activeMemo.id, { title: trimmed, notes: null, generatedByAi: false });
+      const nextMemos = await client.listMemos();
+      setMemos(nextMemos);
+      setActiveMemo(nextMemos.find((memo) => memo.id === activeMemo.id) ?? activeMemo);
+    });
+  }
+
+  async function updateActiveMemoTodo(todoId: string, title: string) {
+    const trimmed = title.trim();
+    if (!activeMemo || !trimmed) {
+      return;
+    }
+
+    await run(async () => {
+      await client.updateTodo(todoId, { title: trimmed });
+      const nextMemos = await client.listMemos();
+      setMemos(nextMemos);
+      setActiveMemo(nextMemos.find((memo) => memo.id === activeMemo.id) ?? activeMemo);
+    });
+  }
+
+  async function deleteActiveMemoTodo(todoId: string) {
+    if (!activeMemo) {
+      return;
+    }
+
+    await run(async () => {
+      await client.deleteTodo(todoId);
+      const nextMemos = await client.listMemos();
+      setMemos(nextMemos);
+      setActiveMemo(nextMemos.find((memo) => memo.id === activeMemo.id) ?? { ...activeMemo, todos: activeMemo.todos.filter((todo) => todo.id !== todoId) });
+    });
+  }
+
+  async function archiveActiveMemo() {
+    if (!activeMemo) {
+      return;
+    }
+
+    await run(async () => {
+      await client.archiveMemo(activeMemo.id);
+      setActiveMemo(null);
+      setMemos(await client.listMemos());
+      setPageState("history");
+      setHistoryMemos(await client.listHistory());
     });
   }
 
@@ -384,6 +475,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     activePrimary,
     title,
     memos,
+    activeMemo,
     historyMemos,
     historyQuery,
     recentDrafts,
@@ -395,10 +487,12 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     syncStatus,
     settingsMessage,
     historyMessage,
+    detailMessage,
     canUndoHistoryDelete: Boolean(lastHistoryDeleteOperationId),
     isLoading,
     error,
     setPage,
+    openMemoDetail,
     updateDraft,
     updateAiSettingsDraft,
     loadRecentDraft,
@@ -407,6 +501,11 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     analyzeDraft,
     publishDraft,
     toggleTodo,
+    updateActiveMemo,
+    addActiveMemoTodo,
+    updateActiveMemoTodo,
+    deleteActiveMemoTodo,
+    archiveActiveMemo,
     restoreMemo,
     refreshMemos,
     refreshHistory,
@@ -423,6 +522,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
 
 function pageTitle(page: Page): string {
   if (page === "capture") return "Capture";
+  if (page === "memoDetail") return "Memo Detail";
   if (page === "settings") return "Settings";
   if (page === "history") return "History";
   return "Memos";

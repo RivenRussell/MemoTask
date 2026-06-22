@@ -2,6 +2,7 @@ import { AppShell } from "./components/AppShell";
 import type { ApiClient } from "./api/client";
 import { CapturePage } from "./pages/CapturePage";
 import { HistoryPage } from "./pages/HistoryPage";
+import { MemoDetailPage } from "./pages/MemoDetailPage";
 import { MemosPage } from "./pages/MemosPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { useMemoTaskState } from "./state/app-state";
@@ -11,7 +12,26 @@ export default function App({ client }: { client?: ApiClient }) {
 
   return (
     <AppShell page={state.page} activePrimary={state.activePrimary} title={state.title} onNavigate={state.setPage}>
-      {state.page === "memos" ? <MemosPage memos={state.memos} onToggleTodo={(todoId) => void state.toggleTodo(todoId)} /> : null}
+      {state.page === "memos" ? (
+        <MemosPage
+          memos={state.memos}
+          onOpenMemo={state.openMemoDetail}
+          onToggleTodo={(todoId) => void state.toggleTodo(todoId)}
+        />
+      ) : null}
+      {state.page === "memoDetail" && state.activeMemo ? (
+        <MemoDetailPage
+          error={state.error}
+          memo={state.activeMemo}
+          message={state.detailMessage}
+          onArchive={() => void state.archiveActiveMemo()}
+          onBack={() => state.setPage("memos")}
+          onCreateTodo={(title) => void state.addActiveMemoTodo(title)}
+          onDeleteTodo={(todoId) => void state.deleteActiveMemoTodo(todoId)}
+          onSaveMemo={(input) => void state.updateActiveMemo(input)}
+          onToggleTodo={(todoId) => void state.toggleTodo(todoId)}
+        />
+      ) : null}
       {state.page === "capture" ? (
         <CapturePage
           draft={state.draft}

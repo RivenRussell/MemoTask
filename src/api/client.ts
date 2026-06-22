@@ -49,6 +49,40 @@ export class ApiClient {
     await this.request<{ todo: unknown }>(`/api/todos/${todoId}/toggle`, { method: "POST" });
   }
 
+  async updateMemo(memoId: string, input: { title: string; content: string }): Promise<Memo> {
+    const body = await this.request<{ memo: Memo }>(`/api/memos/${memoId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input)
+    });
+    return body.memo;
+  }
+
+  async archiveMemo(memoId: string): Promise<Memo> {
+    const body = await this.request<{ memo: Memo }>(`/api/memos/${memoId}/archive`, { method: "POST" });
+    return body.memo;
+  }
+
+  async createTodo(memoId: string, input: { title: string; notes?: string | null; generatedByAi?: boolean }): Promise<void> {
+    await this.request<{ todo: unknown }>(`/api/memos/${memoId}/todos`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input)
+    });
+  }
+
+  async updateTodo(todoId: string, input: { title: string; notes?: string | null }): Promise<void> {
+    await this.request<{ todo: unknown }>(`/api/todos/${todoId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input)
+    });
+  }
+
+  async deleteTodo(todoId: string): Promise<void> {
+    await this.request<{ todo: unknown }>(`/api/todos/${todoId}`, { method: "DELETE" });
+  }
+
   async listHistory(): Promise<Memo[]> {
     const body = await this.request<{ memos: Memo[] }>("/api/history");
     return body.memos;

@@ -1,7 +1,15 @@
-import { FileText } from "lucide-react";
+import { FileText, Pencil } from "lucide-react";
 import type { Memo } from "../types";
 
-export function MemoCard({ memo, onToggleTodo }: { memo: Memo; onToggleTodo: (todoId: string) => void }) {
+export function MemoCard({
+  memo,
+  onOpen,
+  onToggleTodo
+}: {
+  memo: Memo;
+  onOpen: (memoId: string) => void;
+  onToggleTodo: (todoId: string) => void;
+}) {
   return (
     <article className="soft-card memo-card">
       <div className="card-heading">
@@ -27,6 +35,10 @@ export function MemoCard({ memo, onToggleTodo }: { memo: Memo; onToggleTodo: (to
           </li>
         ))}
       </ul>
+      <button className="secondary-action" type="button" aria-label={`打开 ${memo.title}`} onClick={() => onOpen(memo.id)}>
+        <Pencil size={16} />
+        详情
+      </button>
     </article>
   );
 }

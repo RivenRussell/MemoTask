@@ -2,7 +2,15 @@ import { FileText } from "lucide-react";
 import { MemoCard } from "../components/MemoCard";
 import type { Memo } from "../types";
 
-export function MemosPage({ memos, onToggleTodo }: { memos: Memo[]; onToggleTodo: (todoId: string) => void }) {
+export function MemosPage({
+  memos,
+  onOpenMemo,
+  onToggleTodo
+}: {
+  memos: Memo[];
+  onOpenMemo: (memoId: string) => void;
+  onToggleTodo: (todoId: string) => void;
+}) {
   return (
     <div className="content-grid memos-grid">
       {memos.length === 0 ? (
@@ -17,7 +25,7 @@ export function MemosPage({ memos, onToggleTodo }: { memos: Memo[]; onToggleTodo
           <PreviewMemoCard />
         </>
       ) : (
-        memos.map((memo) => <MemoCard key={memo.id} memo={memo} onToggleTodo={onToggleTodo} />)
+        memos.map((memo) => <MemoCard key={memo.id} memo={memo} onOpen={onOpenMemo} onToggleTodo={onToggleTodo} />)
       )}
     </div>
   );
