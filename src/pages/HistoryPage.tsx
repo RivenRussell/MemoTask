@@ -1,7 +1,41 @@
 import { Archive, RotateCcw } from "lucide-react";
+import { useState } from "react";
 import type { Memo } from "../types";
 
-export function HistoryPage({ memos, onRestore }: { memos: Memo[]; onRestore: (memoId: string) => void }) {
+interface HistoryPageProps {
+  memos: Memo[];
+  query: string;
+  message: string | null;
+  canUndoDelete: boolean;
+  onSearch: (query: string) => void;
+  onBulkDelete: (memoIds: string[]) => void;
+  onUndoDelete: () => void;
+  onRestore: (memoId: string) => void;
+}
+
+export function HistoryPage({
+  memos,
+  query,
+  message,
+  canUndoDelete,
+  onSearch,
+  onBulkDelete,
+  onUndoDelete,
+  onRestore
+}: HistoryPageProps) {
+  const [selectedMemoIds, setSelectedMemoIds] = useState<string[]>([]);
+
+  function toggleSelection(memoId: string) {
+    setSelectedMemoIds((current) =>
+      current.includes(memoId) ? current.filter((candidate) => candidate !== memoId) : [...current, memoId]
+    );
+  }
+
+  function bulkDelete() {
+    onBulkDelete(selectedMemoIds);
+    setSelectedMemoIds([]);
+  }
+
   return (
     <div className="content-grid">
       {memos.length === 0 ? (
@@ -14,6 +48,13 @@ export function HistoryPage({ memos, onRestore }: { memos: Memo[]; onRestore: (m
         memos.map((memo) => (
           <article className="soft-card memo-card" key={memo.id}>
             <div className="card-heading">
+              <input
+                aria-label={`选择 ${memo.title}`}
+                checked={selectedMemoIds.includes(memo.id)}
+                className="todo-checkbox"
+                type="checkbox"
+                onChange={() => toggleSelection(memo.id)}
+              />
               <Archive size={20} />
               <h2>{memo.title}</h2>
             </div>
@@ -39,7 +80,23 @@ export function HistoryPage({ memos, onRestore }: { memos: Memo[]; onRestore: (m
       )}
       <section className="soft-card history-search-card">
         <label htmlFor="history-search">Search History</label>
-        <input id="history-search" placeholder="搜索 Memo 标题、原文或 Todo" />
+        <input
+          id="history-search"
+          placeholder="搜索 Memo 标题、原文或 Todo"
+          value={query}
+          onChange={(event) => onSearch(event.target.value)}
+        />
+        <div className="inline-actions">
+          <button className="secondary-action" type="button" onClick={bulkDelete}>
+            删除所选
+          </button>
+          {canUndoDelete ? (
+            <button className="secondary-action" type="button" onClick={onUndoDelete}>
+              撤销删除
+            </button>
+          ) : null}
+        </div>
+        {message ? <p className="status-message">{message}</p> : null}
       </section>
     </div>
   );

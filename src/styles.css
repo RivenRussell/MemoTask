@@ -312,6 +312,23 @@ textarea {
   align-items: center;
 }
 
+.field-hint,
+.status-message {
+  margin: 0;
+  color: #708088;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.status-message {
+  color: #5c8468;
+  font-weight: 800;
+}
+
+.status-message-error {
+  color: #a35d5d;
+}
+
 .primary-action,
 .secondary-action,
 .icon-text-button {

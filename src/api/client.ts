@@ -1,4 +1,4 @@
-import type { AiSettingsView, Memo, PublishMemoInput } from "../types";
+import type { AiSettingsView, AnalyzeDraftResult, Memo, PublishMemoInput, SyncStatusView } from "../types";
 
 interface ApiErrorBody {
   error?: {
@@ -40,9 +40,30 @@ export class ApiClient {
     return body.memos;
   }
 
+  async searchHistory(query: string): Promise<Memo[]> {
+    const body = await this.request<{ memos: Memo[] }>(`/api/history/search?q=${encodeURIComponent(query)}`);
+    return body.memos;
+  }
+
   async restoreMemo(memoId: string): Promise<Memo> {
     const body = await this.request<{ memo: Memo }>(`/api/memos/${memoId}/restore`, { method: "POST" });
     return body.memo;
+  }
+
+  async bulkDeleteHistory(memoIds: string[]): Promise<{ operation: { id: string }; deletedCount: number }> {
+    return this.request<{ operation: { id: string }; deletedCount: number }>("/api/history/bulk-delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ memoIds })
+    });
+  }
+
+  async undoHistoryDelete(operationId: string): Promise<void> {
+    await this.request<{ restored: Memo[] }>("/api/history/undo-delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ operationId })
+    });
   }
 
   async getAiSettings(): Promise<AiSettingsView> {
@@ -64,8 +85,26 @@ export class ApiClient {
     return body.settings;
   }
 
+  async testAiConnection(): Promise<void> {
+    await this.request<{ ok: true }>("/api/ai/test", { method: "POST" });
+  }
+
+  async analyzeDraft(draftId: string): Promise<AnalyzeDraftResult> {
+    const body = await this.request<{ result: AnalyzeDraftResult }>("/api/ai/analyze-draft", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ draftId })
+    });
+    return body.result;
+  }
+
   async exportJson(): Promise<unknown> {
     return this.request<unknown>("/api/export/json");
+  }
+
+  async getSyncStatus(): Promise<SyncStatusView> {
+    const body = await this.request<{ status: SyncStatusView }>("/api/sync/status");
+    return body.status;
   }
 
   private async request<T>(url: string, init?: RequestInit): Promise<T> {

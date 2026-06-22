@@ -57,3 +57,18 @@ export interface AiSettingsView {
   promptTemplate: string;
   updatedAt: string;
 }
+
+export interface SyncStatusView {
+  ok: boolean;
+  lastSuccessAt: string | null;
+  lastError: string | null;
+  updatedAt: string;
+}
+
+export interface AnalyzeDraftResult {
+  title: string;
+  todos: Array<{
+    title: string;
+    notes: string | null;
+  }>;
+}

@@ -22,8 +22,32 @@ export default function App({ client }: { client?: ApiClient }) {
           onUpdateDraft={state.updateDraft}
         />
       ) : null}
-      {state.page === "settings" ? <SettingsPage /> : null}
-      {state.page === "history" ? <HistoryPage memos={state.historyMemos} onRestore={(memoId) => void state.restoreMemo(memoId)} /> : null}
+      {state.page === "settings" ? (
+        <SettingsPage
+          draft={state.aiSettingsDraft}
+          error={state.error}
+          message={state.settingsMessage}
+          settings={state.aiSettings}
+          syncStatus={state.syncStatus}
+          onExportJson={() => void state.exportJson()}
+          onResetPrompt={() => void state.resetAiPrompt()}
+          onSave={() => void state.saveAiSettings()}
+          onTestConnection={() => void state.testAiConnection()}
+          onUpdateDraft={state.updateAiSettingsDraft}
+        />
+      ) : null}
+      {state.page === "history" ? (
+        <HistoryPage
+          canUndoDelete={state.canUndoHistoryDelete}
+          message={state.historyMessage}
+          memos={state.historyMemos}
+          query={state.historyQuery}
+          onBulkDelete={(memoIds) => void state.bulkDeleteHistory(memoIds)}
+          onRestore={(memoId) => void state.restoreMemo(memoId)}
+          onSearch={(query) => void state.searchHistory(query)}
+          onUndoDelete={() => void state.undoHistoryDelete()}
+        />
+      ) : null}
     </AppShell>
   );
 }

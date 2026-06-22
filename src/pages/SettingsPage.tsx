@@ -1,23 +1,78 @@
-export function SettingsPage() {
+import type { AiSettingsDraft } from "../state/app-state";
+import type { AiSettingsView, SyncStatusView } from "../types";
+
+interface SettingsPageProps {
+  draft: AiSettingsDraft;
+  settings: AiSettingsView | null;
+  syncStatus: SyncStatusView | null;
+  message: string | null;
+  error: string | null;
+  onUpdateDraft: (patch: Partial<AiSettingsDraft>) => void;
+  onSave: () => void;
+  onTestConnection: () => void;
+  onResetPrompt: () => void;
+  onExportJson: () => void;
+}
+
+export function SettingsPage({
+  draft,
+  settings,
+  syncStatus,
+  message,
+  error,
+  onUpdateDraft,
+  onSave,
+  onTestConnection,
+  onResetPrompt,
+  onExportJson
+}: SettingsPageProps) {
   return (
     <div className="settings-layout">
       <section className="soft-card settings-card">
         <p className="section-kicker">AI API</p>
         <label htmlFor="base-url">Base URL</label>
-        <input id="base-url" placeholder="https://api.example.com/v1" />
+        <input
+          id="base-url"
+          placeholder="https://api.example.com/v1"
+          value={draft.baseUrl}
+          onChange={(event) => onUpdateDraft({ baseUrl: event.target.value })}
+        />
         <label htmlFor="model">Model</label>
-        <input id="model" defaultValue="dsv4-pro" />
+        <input id="model" value={draft.model} onChange={(event) => onUpdateDraft({ model: event.target.value })} />
         <label htmlFor="api-key">API Key</label>
-        <input id="api-key" placeholder="sk-...b456" type="password" />
-        <button className="primary-action" type="button">
-          Test connection
-        </button>
+        <input
+          id="api-key"
+          placeholder={settings?.apiKeyMask ?? "sk-...b456"}
+          type="password"
+          value={draft.apiKey}
+          onChange={(event) => onUpdateDraft({ apiKey: event.target.value })}
+        />
+        {settings?.apiKeyMask ? <p className="field-hint">当前已保存：{settings.apiKeyMask}</p> : null}
+        {syncStatus ? <p className="field-hint">同步状态：{syncStatus.ok ? "正常" : "异常"}</p> : null}
+        <div className="inline-actions">
+          <button className="primary-action" type="button" onClick={onSave}>
+            保存设置
+          </button>
+          <button className="secondary-action" type="button" onClick={onTestConnection}>
+            测试连接
+          </button>
+          <button className="secondary-action" type="button" onClick={onExportJson}>
+            导出 JSON
+          </button>
+        </div>
+        {message ? <p className="status-message">{message}</p> : null}
+        {error ? <p className="status-message status-message-error">{error}</p> : null}
       </section>
       <section className="soft-card settings-card">
         <p className="section-kicker">Prompt</p>
-        <textarea defaultValue="你是 MemoTask 的整理助手。" />
-        <button className="secondary-action" type="button">
-          Restore default
+        <label htmlFor="prompt-template">Prompt</label>
+        <textarea
+          id="prompt-template"
+          value={draft.promptTemplate}
+          onChange={(event) => onUpdateDraft({ promptTemplate: event.target.value })}
+        />
+        <button className="secondary-action" type="button" onClick={onResetPrompt}>
+          恢复默认 Prompt
         </button>
       </section>
     </div>
