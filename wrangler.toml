@@ -1,0 +1,14 @@
+name = "memotask"
+main = "worker/index.ts"
+compatibility_date = "2026-06-22"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "memotask-db"
+database_id = "3c84d13d-803f-41d3-ab97-292ba1500708"
