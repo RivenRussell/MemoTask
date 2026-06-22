@@ -4,7 +4,12 @@ import { MemoryRepository } from "../../worker/repository/memory-repository";
 
 function createTestApi(fetchAi?: (request: Request) => Promise<Response>) {
   const repository = new MemoryRepository();
-  const app = createApi({ repository, now: () => "2026-06-22T12:00:00.000Z", fetchAi });
+  const app = createApi({
+    repository,
+    now: () => "2026-06-22T12:00:00.000Z",
+    appEncryptionKey: "test-encryption-key-for-api",
+    fetchAi
+  });
   return { app, repository };
 }
 

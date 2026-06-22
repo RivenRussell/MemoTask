@@ -9,7 +9,7 @@ export interface Env {
 
 export default {
   fetch(request: Request, env: Env, executionContext: ExecutionContext) {
-    const app = createApi({ repository: new D1Repository(env.DB) });
+    const app = createApi({ repository: new D1Repository(env.DB), appEncryptionKey: env.APP_ENCRYPTION_KEY });
     return app.fetch(request, env, executionContext);
   }
 };

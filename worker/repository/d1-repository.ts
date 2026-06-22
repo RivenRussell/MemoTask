@@ -329,8 +329,8 @@ export class D1Repository implements MemoRepository {
       ...existing,
       baseUrl: input.baseUrl.trim(),
       model: input.model.trim() || "dsv4-pro",
-      encryptedApiKey: input.apiKey ? encryptPlaceholder(input.apiKey) : existing.encryptedApiKey,
-      apiKeyMask: input.apiKey ? maskApiKey(input.apiKey) : existing.apiKeyMask,
+      encryptedApiKey: input.encryptedApiKey ?? existing.encryptedApiKey,
+      apiKeyMask: input.apiKeyMask ?? existing.apiKeyMask,
       promptTemplate: input.promptTemplate,
       updatedAt: now
     };
@@ -618,18 +618,6 @@ function createDefaultAiSettings(now: string): AiSettings {
     createdAt: now,
     updatedAt: now
   };
-}
-
-function maskApiKey(apiKey: string): string {
-  if (apiKey.length <= 8) {
-    return "****";
-  }
-
-  return `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}`;
-}
-
-function encryptPlaceholder(apiKey: string): string {
-  return `encrypted:${apiKey.length}:${apiKey.slice(-4)}`;
 }
 
 function createId(prefix: string): string {

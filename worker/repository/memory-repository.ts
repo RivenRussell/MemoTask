@@ -316,8 +316,8 @@ export class MemoryRepository implements MemoRepository {
       ...existing,
       baseUrl: input.baseUrl.trim(),
       model: input.model.trim() || "dsv4-pro",
-      encryptedApiKey: input.apiKey ? encryptPlaceholder(input.apiKey) : existing.encryptedApiKey,
-      apiKeyMask: input.apiKey ? maskApiKey(input.apiKey) : existing.apiKeyMask,
+      encryptedApiKey: input.encryptedApiKey ?? existing.encryptedApiKey,
+      apiKeyMask: input.apiKeyMask ?? existing.apiKeyMask,
       promptTemplate: input.promptTemplate,
       updatedAt: now
     };
@@ -369,18 +369,6 @@ function createDefaultAiSettings(now: string): AiSettings {
     createdAt: now,
     updatedAt: now
   };
-}
-
-function maskApiKey(apiKey: string): string {
-  if (apiKey.length <= 8) {
-    return "****";
-  }
-
-  return `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}`;
-}
-
-function encryptPlaceholder(apiKey: string): string {
-  return `encrypted:${apiKey.length}:${apiKey.slice(-4)}`;
 }
 
 export const DEFAULT_PROMPT = `你是 MemoTask 的整理助手。你的任务是把用户输入的原始 Memo 整理成一个 Memo 标题和若干条 Todo 草稿。

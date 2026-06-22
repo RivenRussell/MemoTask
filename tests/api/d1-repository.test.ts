@@ -192,7 +192,7 @@ describe("D1Repository", () => {
     expect(db.statements.flatMap((statement) => statement.values)).toContain("archived");
   });
 
-  it("stores AI settings with a masked API key and no plaintext key in returned settings", async () => {
+  it("stores AI settings with caller-provided ciphertext and no plaintext key", async () => {
     const db = new CannedD1Database([], []);
     const repository = new D1Repository(db as unknown as D1Database);
 
@@ -200,7 +200,8 @@ describe("D1Repository", () => {
       {
         baseUrl: "https://api.example.com/v1",
         model: "dsv4-pro",
-        apiKey: "sk-test-1234567890abcdef",
+        encryptedApiKey: "v1:iv:cipher",
+        apiKeyMask: "sk-t...cdef",
         promptTemplate: "整理 Memo"
       },
       "2026-06-22T12:00:00.000Z"
@@ -208,6 +209,6 @@ describe("D1Repository", () => {
 
     expect(settings.apiKeyMask).toBe("sk-t...cdef");
     expect(JSON.stringify(settings)).not.toContain("1234567890");
-    expect(settings.encryptedApiKey).toBe("encrypted:24:cdef");
+    expect(settings.encryptedApiKey).toBe("v1:iv:cipher");
   });
 });

@@ -31,7 +31,8 @@ export interface AiSettings {
 export interface AiSettingsInput {
   baseUrl: string;
   model: string;
-  apiKey?: string;
+  encryptedApiKey?: string;
+  apiKeyMask?: string;
   promptTemplate: string;
 }
 

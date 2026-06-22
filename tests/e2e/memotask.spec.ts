@@ -7,6 +7,7 @@ test.beforeEach(async ({ page }) => {
   const app = createApi({
     repository,
     now: () => "2026-06-22T12:00:00.000Z",
+    appEncryptionKey: "test-encryption-key-for-e2e",
     fetchAi: async () =>
       Response.json({
         choices: [

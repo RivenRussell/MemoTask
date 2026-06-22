@@ -7,6 +7,7 @@ function createTestApi(fetchAi?: (request: Request) => Promise<Response>) {
   const app = createApi({
     repository,
     now: () => "2026-06-22T12:00:00.000Z",
+    appEncryptionKey: "test-encryption-key-for-ai-settings",
     fetchAi
   });
   return { app, repository };
@@ -31,7 +32,7 @@ describe("AI settings and analyze API", () => {
   });
 
   it("saves settings with a masked API key and never returns the plaintext key", async () => {
-    const { app } = createTestApi();
+    const { app, repository } = createTestApi();
 
     const response = await app.request("/api/ai/settings", {
       method: "PUT",
@@ -48,6 +49,29 @@ describe("AI settings and analyze API", () => {
     expect(response.status).toBe(200);
     expect(body.settings.apiKeyMask).toBe("sk-t...cdef");
     expect(JSON.stringify(body)).not.toContain("1234567890");
+    expect(JSON.stringify(await repository.getAiSettings("2026-06-22T12:00:00.000Z"))).not.toContain("1234567890");
+  });
+
+  it("requires the server encryption key before storing an API key", async () => {
+    const app = createApi({
+      repository: new MemoryRepository(),
+      now: () => "2026-06-22T12:00:00.000Z"
+    });
+
+    const response = await app.request("/api/ai/settings", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        baseUrl: "https://api.example.com/v1",
+        apiKey: "sk-test-1234567890abcdef",
+        model: "dsv4-pro",
+        promptTemplate: "整理 Memo"
+      })
+    });
+    const body = await json(response);
+
+    expect(response.status).toBe(500);
+    expect(body.error.code).toBe("ENCRYPTION_KEY_MISSING");
   });
 
   it("resets prompt to the built-in default", async () => {
@@ -92,7 +116,8 @@ describe("AI settings and analyze API", () => {
   });
 
   it("analyzes a draft and accepts JSON wrapped in markdown fences", async () => {
-    const { app } = createTestApi(async () => {
+    const { app } = createTestApi(async (request) => {
+      expect(request.headers.get("authorization")).toBe("Bearer sk-test-1234567890abcdef");
       return Response.json({
         choices: [
           {

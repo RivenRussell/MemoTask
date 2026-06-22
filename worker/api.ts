@@ -6,6 +6,7 @@ import type { AiSettings, MemoRepository } from "./repository/types";
 interface ApiOptions {
   repository?: MemoRepository;
   now?: () => string;
+  appEncryptionKey?: string;
   fetchAi?: (request: Request) => Promise<Response>;
 }
 
@@ -27,6 +28,69 @@ function publicAiSettings(settings: AiSettings) {
     promptTemplate: settings.promptTemplate,
     updatedAt: settings.updatedAt
   };
+}
+
+function getEncryptionKey(options: ApiOptions): string | undefined {
+  return options.appEncryptionKey?.trim();
+}
+
+function maskApiKey(apiKey: string): string {
+  if (apiKey.length <= 8) {
+    return "****";
+  }
+
+  return `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}`;
+}
+
+async function encryptionMaterial(secret: string): Promise<CryptoKey> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+  return crypto.subtle.importKey("raw", digest, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  return btoa(String.fromCharCode(...bytes));
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+}
+
+async function encryptApiKey(apiKey: string, secret: string): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await encryptionMaterial(secret);
+  const plain = new TextEncoder().encode(apiKey);
+  const cipher = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: toArrayBuffer(iv) }, key, toArrayBuffer(plain)));
+  return `v1:${bytesToBase64(iv)}:${bytesToBase64(cipher)}`;
+}
+
+async function decryptApiKey(encryptedApiKey: string, secret: string): Promise<string> {
+  const [version, ivValue, cipherValue] = encryptedApiKey.split(":");
+  if (version !== "v1" || !ivValue || !cipherValue) {
+    throw new Error("Unsupported encrypted key format");
+  }
+
+  const key = await encryptionMaterial(secret);
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: toArrayBuffer(base64ToBytes(ivValue)) }, key, toArrayBuffer(base64ToBytes(cipherValue)));
+  return new TextDecoder().decode(plain);
+}
+
+async function getPlainApiKey(settings: AiSettings, options: ApiOptions): Promise<string | null> {
+  if (!settings.encryptedApiKey) {
+    return null;
+  }
+
+  const key = getEncryptionKey(options);
+  if (!key) {
+    throw new Error("ENCRYPTION_KEY_MISSING");
+  }
+
+  return decryptApiKey(settings.encryptedApiKey, key);
 }
 
 function extractAiContent(payload: any): string {
@@ -303,11 +367,26 @@ export function createApi(options: ApiOptions = {}) {
 
   app.put("/api/ai/settings", async (context) => {
     const body = await readJson<{ baseUrl?: string; model?: string; apiKey?: string; promptTemplate?: string }>(context);
+    const trimmedApiKey = body.apiKey?.trim();
+    let encryptedApiKey: string | undefined;
+    let apiKeyMask: string | undefined;
+
+    if (trimmedApiKey) {
+      const encryptionKey = getEncryptionKey(options);
+      if (!encryptionKey) {
+        return context.json({ error: { code: "ENCRYPTION_KEY_MISSING", message: "服务端加密密钥未配置" } }, 500);
+      }
+
+      encryptedApiKey = await encryptApiKey(trimmedApiKey, encryptionKey);
+      apiKeyMask = maskApiKey(trimmedApiKey);
+    }
+
     const settings = await repository.saveAiSettings(
       {
         baseUrl: body.baseUrl ?? "",
         model: body.model || "dsv4-pro",
-        apiKey: body.apiKey,
+        encryptedApiKey,
+        apiKeyMask,
         promptTemplate: body.promptTemplate || DEFAULT_PROMPT
       },
       getNow(options)
@@ -326,11 +405,12 @@ export function createApi(options: ApiOptions = {}) {
       return context.json({ error: { code: "AI_UNAVAILABLE", message: "请先在 Settings 配置 AI API" } }, 400);
     }
 
+    const apiKey = await getPlainApiKey(settings, options);
     const fetchAi = options.fetchAi ?? fetch;
     const response = await fetchAi(
       new Request(`${settings.baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "authorization": `Bearer ${apiKey}`, "content-type": "application/json" },
         body: JSON.stringify({
           model: settings.model,
           messages: [{ role: "user", content: "MemoTask 连接测试" }],
@@ -358,11 +438,12 @@ export function createApi(options: ApiOptions = {}) {
       return context.json({ error: { code: "NOT_FOUND", message: "草稿不存在" } }, 404);
     }
 
+    const apiKey = await getPlainApiKey(settings, options);
     const fetchAi = options.fetchAi ?? fetch;
     const response = await fetchAi(
       new Request(`${settings.baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "authorization": `Bearer ${apiKey}`, "content-type": "application/json" },
         body: JSON.stringify({
           model: settings.model,
           messages: [
