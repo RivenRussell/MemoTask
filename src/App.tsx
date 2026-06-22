@@ -16,7 +16,12 @@ export default function App({ client }: { client?: ApiClient }) {
         <CapturePage
           draft={state.draft}
           error={state.error}
+          isAnalyzing={state.isAnalyzing}
+          message={state.captureMessage}
+          recentDrafts={state.recentDrafts}
           onAddTodo={state.addDraftTodo}
+          onAnalyze={state.analyzeDraft}
+          onLoadDraft={state.loadRecentDraft}
           onPublish={state.publishDraft}
           onRemoveTodo={state.removeDraftTodo}
           onUpdateDraft={state.updateDraft}

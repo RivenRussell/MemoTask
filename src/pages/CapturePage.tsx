@@ -1,19 +1,30 @@
 import { useState } from "react";
 import type { DraftState } from "../state/app-state";
+import type { Memo } from "../types";
 
 export function CapturePage({
   draft,
   error,
+  message,
+  recentDrafts,
+  isAnalyzing,
   onUpdateDraft,
+  onLoadDraft,
   onAddTodo,
   onRemoveTodo,
+  onAnalyze,
   onPublish
 }: {
   draft: DraftState;
   error: string | null;
+  message: string | null;
+  recentDrafts: Memo[];
+  isAnalyzing: boolean;
   onUpdateDraft: (patch: Partial<DraftState>) => void;
+  onLoadDraft: (draftId: string) => void;
   onAddTodo: (title: string) => void;
   onRemoveTodo: (index: number) => void;
+  onAnalyze: () => Promise<void>;
   onPublish: () => Promise<void>;
 }) {
   const [newTodo, setNewTodo] = useState("");
@@ -36,15 +47,32 @@ export function CapturePage({
         />
         <label htmlFor="memo-title">Memo 标题</label>
         <input id="memo-title" value={draft.title} onChange={(event) => onUpdateDraft({ title: event.target.value })} />
+        {message ? <p className="status-message">{message}</p> : null}
         {error ? <p className="inline-error">{error}</p> : null}
         <div className="inline-actions">
-          <button className="primary-action" type="button">
-            Analyze
+          <button className="primary-action" type="button" onClick={() => void onAnalyze()}>
+            {isAnalyzing ? "Analyzing" : "Analyze"}
           </button>
           <button className="secondary-action" type="button" onClick={() => void onPublish()}>
             Publish
           </button>
         </div>
+        {recentDrafts.length > 0 ? (
+          <div className="recent-drafts">
+            <p className="section-kicker">最近草稿</p>
+            {recentDrafts.map((recentDraft) => (
+              <button
+                className="secondary-action"
+                key={recentDraft.id}
+                type="button"
+                aria-label={`载入草稿：${recentDraft.title}`}
+                onClick={() => onLoadDraft(recentDraft.id)}
+              >
+                {recentDraft.title}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </section>
       <section className="soft-card draft-card">
         <p className="section-kicker">Todo 草稿</p>

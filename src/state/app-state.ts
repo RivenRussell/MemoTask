@@ -25,7 +25,10 @@ export interface AppState {
   memos: Memo[];
   historyMemos: Memo[];
   historyQuery: string;
+  recentDrafts: Memo[];
   draft: DraftState;
+  captureMessage: string | null;
+  isAnalyzing: boolean;
   aiSettings: AiSettingsView | null;
   aiSettingsDraft: AiSettingsDraft;
   syncStatus: SyncStatusView | null;
@@ -37,8 +40,10 @@ export interface AppState {
   setPage: (page: Page) => void;
   updateDraft: (patch: Partial<DraftState>) => void;
   updateAiSettingsDraft: (patch: Partial<AiSettingsDraft>) => void;
+  loadRecentDraft: (draftId: string) => void;
   addDraftTodo: (title: string) => void;
   removeDraftTodo: (index: number) => void;
+  analyzeDraft: () => Promise<void>;
   publishDraft: () => Promise<void>;
   toggleTodo: (todoId: string) => Promise<void>;
   restoreMemo: (memoId: string) => Promise<void>;
@@ -72,7 +77,11 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   const [memos, setMemos] = useState<Memo[]>([]);
   const [historyMemos, setHistoryMemos] = useState<Memo[]>([]);
   const [historyQuery, setHistoryQuery] = useState("");
+  const [recentDrafts, setRecentDrafts] = useState<Memo[]>([]);
   const [draft, setDraft] = useState<DraftState>(emptyDraft);
+  const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
+  const [captureMessage, setCaptureMessage] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiSettings, setAiSettings] = useState<AiSettingsView | null>(null);
   const [aiSettingsDraft, setAiSettingsDraft] = useState<AiSettingsDraft>(defaultAiSettingsDraft);
   const [syncStatus, setSyncStatus] = useState<SyncStatusView | null>(null);
@@ -87,6 +96,27 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   useEffect(() => {
     void refreshMemos();
   }, []);
+
+  useEffect(() => {
+    if (page !== "capture") {
+      return;
+    }
+
+    void refreshDrafts();
+  }, [page]);
+
+  useEffect(() => {
+    if (page !== "capture" || !draft.content.trim()) {
+      return;
+    }
+
+    setCaptureMessage("草稿保存中");
+    const timeout = window.setTimeout(() => {
+      void saveCurrentDraft();
+    }, 350);
+
+    return () => window.clearTimeout(timeout);
+  }, [page, draft.title, draft.content]);
 
   async function run(action: () => Promise<void>) {
     setError(null);
@@ -118,6 +148,9 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     if (page === "settings") {
       void refreshSettings();
     }
+    if (page === "capture") {
+      void refreshDrafts();
+    }
   }
 
   function updateDraft(patch: Partial<DraftState>) {
@@ -126,6 +159,21 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
 
   function updateAiSettingsDraft(patch: Partial<AiSettingsDraft>) {
     setAiSettingsDraft((current) => ({ ...current, ...patch }));
+  }
+
+  function loadRecentDraft(draftId: string) {
+    const selected = recentDrafts.find((candidate) => candidate.id === draftId);
+    if (!selected) {
+      return;
+    }
+
+    setCurrentDraftId(selected.id);
+    setDraft({
+      title: selected.title === "未命名 Memo" ? "" : selected.title,
+      content: selected.content,
+      todos: []
+    });
+    setCaptureMessage("已载入最近草稿");
   }
 
   function addDraftTodo(title: string) {
@@ -147,6 +195,59 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     }));
   }
 
+  async function refreshDrafts() {
+    await run(async () => {
+      setRecentDrafts(await client.listRecentDrafts());
+    });
+  }
+
+  async function saveCurrentDraft(): Promise<string | null> {
+    if (!draft.content.trim()) {
+      return currentDraftId;
+    }
+
+    let savedDraftId: string | null = null;
+    await run(async () => {
+      const savedDraft = await client.createDraft({
+        title: draft.title.trim() || undefined,
+        content: draft.content
+      });
+      savedDraftId = savedDraft.id;
+      setCurrentDraftId(savedDraft.id);
+      setRecentDrafts(await client.listRecentDrafts());
+      setCaptureMessage("草稿已保存");
+    });
+    return savedDraftId;
+  }
+
+  async function analyzeDraft() {
+    if (!draft.content.trim()) {
+      setError("请输入 Memo 内容");
+      return;
+    }
+
+    setIsAnalyzing(true);
+    await run(async () => {
+      const draftId = (await saveCurrentDraft()) ?? currentDraftId;
+      if (!draftId) {
+        throw new Error("草稿保存失败，请稍后重试");
+      }
+
+      const result = await client.analyzeDraft(draftId);
+      setDraft((current) => ({
+        ...current,
+        title: result.title,
+        todos: result.todos.map((todo) => ({
+          title: todo.title,
+          notes: todo.notes,
+          generatedByAi: true
+        }))
+      }));
+      setCaptureMessage("AI 草稿已生成");
+    });
+    setIsAnalyzing(false);
+  }
+
   async function publishDraft() {
     if (!draft.content.trim()) {
       setError("请输入 Memo 内容");
@@ -162,6 +263,9 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     await run(async () => {
       await client.publishMemo(input);
       setDraft(emptyDraft);
+      setCurrentDraftId(null);
+      setCaptureMessage(null);
+      setRecentDrafts(await client.listRecentDrafts());
       setPageState("memos");
       setMemos(await client.listMemos());
     });
@@ -282,7 +386,10 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     memos,
     historyMemos,
     historyQuery,
+    recentDrafts,
     draft,
+    captureMessage,
+    isAnalyzing,
     aiSettings,
     aiSettingsDraft,
     syncStatus,
@@ -294,8 +401,10 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     setPage,
     updateDraft,
     updateAiSettingsDraft,
+    loadRecentDraft,
     addDraftTodo,
     removeDraftTodo,
+    analyzeDraft,
     publishDraft,
     toggleTodo,
     restoreMemo,

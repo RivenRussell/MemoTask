@@ -1,4 +1,4 @@
-import type { AiSettingsView, AnalyzeDraftResult, Memo, PublishMemoInput, SyncStatusView } from "../types";
+import type { AiSettingsView, AnalyzeDraftResult, DraftInput, Memo, PublishMemoInput, SyncStatusView } from "../types";
 
 interface ApiErrorBody {
   error?: {
@@ -29,6 +29,20 @@ export class ApiClient {
       body: JSON.stringify(input)
     });
     return body.memo;
+  }
+
+  async createDraft(input: DraftInput): Promise<Memo> {
+    const body = await this.request<{ draft: Memo }>("/api/drafts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input)
+    });
+    return body.draft;
+  }
+
+  async listRecentDrafts(): Promise<Memo[]> {
+    const body = await this.request<{ drafts: Memo[] }>("/api/drafts/recent");
+    return body.drafts;
   }
 
   async toggleTodo(todoId: string): Promise<void> {

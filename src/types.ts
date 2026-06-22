@@ -43,6 +43,11 @@ export interface DraftTodoInput {
   generatedByAi: boolean;
 }
 
+export interface DraftInput {
+  title?: string;
+  content: string;
+}
+
 export interface PublishMemoInput {
   draftId?: string;
   title: string;

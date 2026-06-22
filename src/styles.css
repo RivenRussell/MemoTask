@@ -312,6 +312,16 @@ textarea {
   align-items: center;
 }
 
+.recent-drafts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.recent-drafts .section-kicker {
+  flex: 1 0 100%;
+}
+
 .field-hint,
 .status-message {
   margin: 0;
