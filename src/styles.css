@@ -163,6 +163,7 @@ button {
 
 .intro-card,
 .memo-preview-card,
+.memo-card,
 .draft-card,
 .settings-card,
 .history-search-card {
@@ -197,6 +198,10 @@ button {
   font-weight: 800;
 }
 
+.memo-content {
+  margin: 14px 0 18px;
+}
+
 .todo-list {
   display: grid;
   gap: 12px;
@@ -221,6 +226,19 @@ button {
 .todo-list li.is-done {
   color: #9aa6ad;
   text-decoration: none;
+}
+
+.todo-list li.is-done span {
+  text-decoration: none;
+}
+
+.todo-checkbox {
+  width: 18px;
+  min-height: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  accent-color: #7ea88b;
+  box-shadow: none;
 }
 
 .checkbox-visual {
@@ -285,6 +303,13 @@ textarea {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.todo-draft-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
 }
 
 .primary-action,
