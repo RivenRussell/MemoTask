@@ -1,0 +1,83 @@
+import type { AiSettingsView, Memo, PublishMemoInput } from "../types";
+
+interface ApiErrorBody {
+  error?: {
+    code?: string;
+    message?: string;
+  };
+}
+
+interface AiSettingsInput {
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
+  promptTemplate: string;
+}
+
+export class ApiClient {
+  constructor(private readonly fetcher: typeof fetch = fetch) {}
+
+  async listMemos(): Promise<Memo[]> {
+    const body = await this.request<{ memos: Memo[] }>("/api/memos");
+    return body.memos;
+  }
+
+  async publishMemo(input: PublishMemoInput): Promise<Memo> {
+    const body = await this.request<{ memo: Memo }>("/api/memos/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input)
+    });
+    return body.memo;
+  }
+
+  async toggleTodo(todoId: string): Promise<void> {
+    await this.request<{ todo: unknown }>(`/api/todos/${todoId}/toggle`, { method: "POST" });
+  }
+
+  async listHistory(): Promise<Memo[]> {
+    const body = await this.request<{ memos: Memo[] }>("/api/history");
+    return body.memos;
+  }
+
+  async restoreMemo(memoId: string): Promise<Memo> {
+    const body = await this.request<{ memo: Memo }>(`/api/memos/${memoId}/restore`, { method: "POST" });
+    return body.memo;
+  }
+
+  async getAiSettings(): Promise<AiSettingsView> {
+    const body = await this.request<{ settings: AiSettingsView }>("/api/ai/settings");
+    return body.settings;
+  }
+
+  async saveAiSettings(input: AiSettingsInput): Promise<AiSettingsView> {
+    const body = await this.request<{ settings: AiSettingsView }>("/api/ai/settings", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input)
+    });
+    return body.settings;
+  }
+
+  async resetAiPrompt(): Promise<AiSettingsView> {
+    const body = await this.request<{ settings: AiSettingsView }>("/api/ai/reset-prompt", { method: "POST" });
+    return body.settings;
+  }
+
+  async exportJson(): Promise<unknown> {
+    return this.request<unknown>("/api/export/json");
+  }
+
+  private async request<T>(url: string, init?: RequestInit): Promise<T> {
+    const response = init ? await this.fetcher(url, init) : await this.fetcher(url);
+    const body = (await response.json().catch(() => ({}))) as T & ApiErrorBody;
+
+    if (!response.ok) {
+      throw new Error(body.error?.message ?? "请求失败，请稍后重试");
+    }
+
+    return body;
+  }
+}
+
+export const apiClient = new ApiClient();

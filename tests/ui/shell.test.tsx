@@ -2,13 +2,14 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import App from "../../src/App";
+import { createUiTestClient } from "./test-client";
 
 describe("MemoTask app shell", () => {
-  it("opens on the Memos page with Chinese product UI", () => {
-    render(<App />);
+  it("opens on the Memos page with Chinese product UI", async () => {
+    render(<App client={createUiTestClient()} />);
 
     expect(screen.getByRole("heading", { name: "Memos" })).toBeInTheDocument();
-    expect(screen.getByText("当前 Memo 队列")).toBeInTheDocument();
+    expect(await screen.findByText("当前 Memo 队列")).toBeInTheDocument();
     expect(screen.getByText("还没有 Memo")).toBeInTheDocument();
     expect(screen.queryByText("Today")).not.toBeInTheDocument();
     expect(screen.queryByText("Upcoming")).not.toBeInTheDocument();
@@ -16,7 +17,7 @@ describe("MemoTask app shell", () => {
   });
 
   it("keeps primary navigation limited to Capture, Memos, and Settings", () => {
-    render(<App />);
+    render(<App client={createUiTestClient()} />);
 
     const primaryNav = screen.getByRole("navigation", { name: "主导航" });
     const links = within(primaryNav).getAllByRole("button");
@@ -26,7 +27,7 @@ describe("MemoTask app shell", () => {
   });
 
   it("opens History only from the Memos page action", async () => {
-    render(<App />);
+    render(<App client={createUiTestClient()} />);
 
     await userEvent.click(screen.getByRole("button", { name: "打开 History" }));
 
@@ -36,7 +37,7 @@ describe("MemoTask app shell", () => {
   });
 
   it("switches between Capture, Memos, and Settings without showing forbidden features", async () => {
-    render(<App />);
+    render(<App client={createUiTestClient()} />);
     const primaryNav = screen.getByRole("navigation", { name: "主导航" });
 
     await userEvent.click(within(primaryNav).getByRole("button", { name: "Capture" }));
