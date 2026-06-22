@@ -38,9 +38,9 @@ export function MemoDetailPage({
     <div className="capture-layout">
       <section className="soft-card capture-editor">
         <p className="section-kicker">Memo 深编辑</p>
-        <label htmlFor="detail-title">Detail 标题</label>
+        <label htmlFor="detail-title">详情标题</label>
         <input id="detail-title" value={title} onChange={(event) => setTitle(event.target.value)} />
-        <label htmlFor="detail-content">Detail 原文</label>
+        <label htmlFor="detail-content">详情原文</label>
         <textarea id="detail-content" value={content} onChange={(event) => setContent(event.target.value)} />
         {message ? <p className="status-message">{message}</p> : null}
         {error ? <p className="status-message status-message-error">{error}</p> : null}
@@ -55,14 +55,14 @@ export function MemoDetailPage({
           </button>
           <button className="secondary-action" type="button" onClick={onBack}>
             <ArrowLeft size={16} />
-            返回 Memos
+            返回队列
           </button>
         </div>
       </section>
 
       <section className="soft-card draft-card">
         <p className="section-kicker">Todo</p>
-        <label htmlFor="detail-new-todo">Detail 新增 Todo</label>
+        <label htmlFor="detail-new-todo">详情新增 Todo</label>
         <div className="todo-draft-row">
           <input id="detail-new-todo" value={newTodo} onChange={(event) => setNewTodo(event.target.value)} />
           <button className="secondary-action" type="button" onClick={createTodo}>

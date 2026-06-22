@@ -26,26 +26,26 @@ describe("MemoTask capture draft and AI workflow", () => {
     );
     const primaryNav = screen.getByRole("navigation", { name: "主导航" });
 
-    await userEvent.click(within(primaryNav).getByRole("button", { name: "Settings" }));
-    await userEvent.type(screen.getByLabelText("Base URL"), "https://api.example.com/v1");
-    await userEvent.type(screen.getByLabelText("API Key"), "test-key-1234567890abcdef");
+    await userEvent.click(within(primaryNav).getByRole("button", { name: "设置" }));
+    await userEvent.type(screen.getByLabelText("接口地址"), "https://api.example.com/v1");
+    await userEvent.type(screen.getByLabelText("API 密钥"), "test-key-1234567890abcdef");
     await userEvent.click(screen.getByRole("button", { name: "保存设置" }));
     expect(await screen.findByText("已保存 AI 设置")).toBeInTheDocument();
 
-    await userEvent.click(within(primaryNav).getByRole("button", { name: "Capture" }));
-    await userEvent.type(screen.getByLabelText("Raw Memo"), "研究 PWA 能不能覆盖手机和 PC");
+    await userEvent.click(within(primaryNav).getByRole("button", { name: "记录" }));
+    await userEvent.type(screen.getByLabelText("原始 Memo"), "研究 PWA 能不能覆盖手机和 PC");
     expect(await screen.findByText("草稿已保存")).toBeInTheDocument();
 
-    await userEvent.clear(screen.getByLabelText("Raw Memo"));
+    await userEvent.clear(screen.getByLabelText("原始 Memo"));
     await userEvent.click(screen.getByRole("button", { name: "载入草稿：未命名 Memo" }));
     expect(screen.getByDisplayValue("研究 PWA 能不能覆盖手机和 PC")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Analyze" }));
+    await userEvent.click(screen.getByRole("button", { name: "整理" }));
     expect(await screen.findByDisplayValue("PWA 调研")).toBeInTheDocument();
     expect(await screen.findByText("确认手机支持")).toBeInTheDocument();
     expect(screen.getByText("整理 PC 方案")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Publish" }));
+    await userEvent.click(screen.getByRole("button", { name: "发布" }));
     expect(await screen.findByText("PWA 调研")).toBeInTheDocument();
     expect(screen.getByText("确认手机支持")).toBeInTheDocument();
   });

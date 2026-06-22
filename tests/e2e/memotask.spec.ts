@@ -46,7 +46,7 @@ test("pc queue settings history and manifest smoke", async ({ page }, testInfo) 
   test.skip(testInfo.project.name !== "pc", "PC smoke runs only on the desktop project.");
 
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Memos" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "队列" })).toBeVisible();
   await expect(page.getByText("Today")).toHaveCount(0);
   await expect(page.getByText("Upcoming")).toHaveCount(0);
   await expect(page.getByText("订阅")).toHaveCount(0);
@@ -61,9 +61,9 @@ test("pc queue settings history and manifest smoke", async ({ page }, testInfo) 
   await page.getByRole("button", { name: "下移 高优先 Memo" }).click();
   await expectMemoOrder(page, ["低优先 Memo", "高优先 Memo"]);
 
-  await page.getByRole("button", { name: "Settings" }).first().click();
-  await page.getByLabel("Base URL").fill("https://api.example.com/v1");
-  await page.getByLabel("API Key").fill("test-key-1234567890abcdef");
+  await page.getByRole("button", { name: "设置" }).first().click();
+  await page.getByLabel("接口地址").fill("https://api.example.com/v1");
+  await page.getByLabel("API 密钥").fill("test-key-1234567890abcdef");
   await page.getByRole("button", { name: "保存设置" }).click();
   await expect(page.getByText("已保存 AI 设置")).toBeVisible();
   await page.getByRole("button", { name: "导出 JSON" }).click();
@@ -74,31 +74,31 @@ test("android capture complete history restore smoke", async ({ page }, testInfo
   test.skip(testInfo.project.name !== "android", "Android smoke runs only on the mobile project.");
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Capture" }).last().click();
-  await page.getByLabel("Raw Memo").fill("移动端检查 Memo");
+  await page.getByRole("button", { name: "记录" }).last().click();
+  await page.getByLabel("原始 Memo").fill("移动端检查 Memo");
   await page.getByLabel("Memo 标题").fill("移动端检查");
   await page.getByLabel("新增 Todo").fill("完成移动端验证");
   await page.getByRole("button", { name: "添加 Todo" }).click();
-  await page.getByRole("button", { name: "Publish" }).click();
+  await page.getByRole("button", { name: "发布" }).click();
 
-  await expect(page.getByRole("heading", { name: "Memos" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "队列" })).toBeVisible();
   await page.getByRole("checkbox", { name: "完成移动端验证" }).click();
   await expect(page.getByText("还没有 Memo")).toBeVisible();
 
-  await page.getByRole("button", { name: "打开 History" }).click();
+  await page.getByRole("button", { name: "打开历史" }).click();
   await expect(page.getByRole("heading", { name: "移动端检查" })).toBeVisible();
   await page.getByRole("button", { name: "恢复 移动端检查" }).click();
-  await expect(page.getByRole("heading", { name: "Memos" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "队列" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "移动端检查" })).toBeVisible();
 });
 
 async function publishMemo(page: Page, title: string, content: string, todo: string) {
-  await page.getByRole("button", { name: "Capture" }).first().click();
-  await page.getByLabel("Raw Memo").fill(content);
+  await page.getByRole("button", { name: "记录" }).first().click();
+  await page.getByLabel("原始 Memo").fill(content);
   await page.getByLabel("Memo 标题").fill(title);
   await page.getByLabel("新增 Todo").fill(todo);
   await page.getByRole("button", { name: "添加 Todo" }).click();
-  await page.getByRole("button", { name: "Publish" }).click();
+  await page.getByRole("button", { name: "发布" }).click();
   await expect(page.getByText(title)).toBeVisible();
 }
 

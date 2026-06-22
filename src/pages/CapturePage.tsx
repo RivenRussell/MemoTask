@@ -38,7 +38,7 @@ export function CapturePage({
     <div className="capture-layout">
       <section className="soft-card capture-editor">
         <p className="section-kicker">写下原始想法</p>
-        <label htmlFor="raw-memo">Raw Memo</label>
+        <label htmlFor="raw-memo">原始 Memo</label>
         <textarea
           id="raw-memo"
           placeholder="例如：研究 PWA 能不能覆盖手机和 PC，然后整理实现方案。"
@@ -51,10 +51,10 @@ export function CapturePage({
         {error ? <p className="inline-error">{error}</p> : null}
         <div className="inline-actions">
           <button className="primary-action" type="button" onClick={() => void onAnalyze()}>
-            {isAnalyzing ? "Analyzing" : "Analyze"}
+            {isAnalyzing ? "整理中" : "整理"}
           </button>
           <button className="secondary-action" type="button" onClick={() => void onPublish()}>
-            Publish
+            发布
           </button>
         </div>
         {recentDrafts.length > 0 ? (
@@ -77,7 +77,7 @@ export function CapturePage({
       <section className="soft-card draft-card">
         <p className="section-kicker">Todo 草稿</p>
         <h2>AI 结果发布前可编辑</h2>
-        <p>Analyze 只在这里触发。发布后不会重新生成，也不会改变 Memo 排序。</p>
+        <p>智能整理只在这里触发。发布后不会重新生成，也不会改变 Memo 排序。</p>
         <label htmlFor="new-todo">新增 Todo</label>
         <div className="todo-draft-row">
           <input id="new-todo" value={newTodo} onChange={(event) => setNewTodo(event.target.value)} />

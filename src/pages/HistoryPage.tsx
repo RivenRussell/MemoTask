@@ -41,7 +41,7 @@ export function HistoryPage({
       {memos.length === 0 ? (
         <section className="soft-card intro-card">
           <p className="section-kicker">完整 Memo 历史</p>
-          <h2>还没有 History</h2>
+          <h2>还没有历史 Memo</h2>
           <p>完成归档和手动归档都会保存完整 Memo。这里支持搜索、恢复、批量软删除和短时间撤销。</p>
         </section>
       ) : (
@@ -73,13 +73,13 @@ export function HistoryPage({
             </ul>
             <button className="secondary-action" type="button" aria-label={`恢复 ${memo.title}`} onClick={() => onRestore(memo.id)}>
               <RotateCcw size={16} />
-              Restore
+              恢复
             </button>
           </article>
         ))
       )}
       <section className="soft-card history-search-card">
-        <label htmlFor="history-search">Search History</label>
+        <label htmlFor="history-search">搜索历史</label>
         <input
           id="history-search"
           placeholder="搜索 Memo 标题、原文或 Todo"

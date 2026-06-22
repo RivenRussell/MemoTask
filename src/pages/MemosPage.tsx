@@ -21,7 +21,7 @@ export function MemosPage({
             <p className="section-kicker">当前 Memo 队列</p>
             <h2>还没有 Memo</h2>
             <p>
-              从 Capture 写下一段原始想法，发布后 Memo 会出现在这里。越靠前越值得先处理，不会制造过期压力。
+              从记录页写下一段原始想法，发布后 Memo 会出现在这里。越靠前越值得先处理，不会制造过期压力。
             </p>
           </section>
           <PreviewMemoCard />

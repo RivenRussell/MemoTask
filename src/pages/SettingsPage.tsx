@@ -30,16 +30,16 @@ export function SettingsPage({
     <div className="settings-layout">
       <section className="soft-card settings-card">
         <p className="section-kicker">AI API</p>
-        <label htmlFor="base-url">Base URL</label>
+        <label htmlFor="base-url">接口地址</label>
         <input
           id="base-url"
           placeholder="https://api.example.com/v1"
           value={draft.baseUrl}
           onChange={(event) => onUpdateDraft({ baseUrl: event.target.value })}
         />
-        <label htmlFor="model">Model</label>
+        <label htmlFor="model">模型</label>
         <input id="model" value={draft.model} onChange={(event) => onUpdateDraft({ model: event.target.value })} />
-        <label htmlFor="api-key">API Key</label>
+        <label htmlFor="api-key">API 密钥</label>
         <input
           id="api-key"
           placeholder={settings?.apiKeyMask ?? "sk-...b456"}

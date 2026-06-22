@@ -539,9 +539,9 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
 }
 
 function pageTitle(page: Page): string {
-  if (page === "capture") return "Capture";
-  if (page === "memoDetail") return "Memo Detail";
-  if (page === "settings") return "Settings";
-  if (page === "history") return "History";
-  return "Memos";
+  if (page === "capture") return "记录";
+  if (page === "memoDetail") return "Memo 详情";
+  if (page === "settings") return "设置";
+  if (page === "history") return "历史";
+  return "队列";
 }

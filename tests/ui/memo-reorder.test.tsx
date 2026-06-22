@@ -17,19 +17,19 @@ describe("MemoTask memo reorder workflow", () => {
     await userEvent.click(screen.getByRole("button", { name: "下移 高优先 Memo" }));
     expect(memoTitles()).toEqual(["低优先 Memo", "高优先 Memo"]);
 
-    await userEvent.click(within(primaryNav).getByRole("button", { name: "Settings" }));
-    await userEvent.click(within(primaryNav).getByRole("button", { name: "Memos" }));
+    await userEvent.click(within(primaryNav).getByRole("button", { name: "设置" }));
+    await userEvent.click(within(primaryNav).getByRole("button", { name: "队列" }));
     expect(memoTitles()).toEqual(["低优先 Memo", "高优先 Memo"]);
   });
 });
 
 async function publishMemo(primaryNav: HTMLElement, title: string, content: string, todo: string) {
-  await userEvent.click(within(primaryNav).getByRole("button", { name: "Capture" }));
-  await userEvent.type(screen.getByLabelText("Raw Memo"), content);
+  await userEvent.click(within(primaryNav).getByRole("button", { name: "记录" }));
+  await userEvent.type(screen.getByLabelText("原始 Memo"), content);
   await userEvent.type(screen.getByLabelText("Memo 标题"), title);
   await userEvent.type(screen.getByLabelText("新增 Todo"), todo);
   await userEvent.click(screen.getByRole("button", { name: "添加 Todo" }));
-  await userEvent.click(screen.getByRole("button", { name: "Publish" }));
+  await userEvent.click(screen.getByRole("button", { name: "发布" }));
   expect(await screen.findByText(title)).toBeInTheDocument();
 }
 

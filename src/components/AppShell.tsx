@@ -6,9 +6,9 @@ const primaryNav: Array<{
   label: string;
   icon: typeof SquarePen;
 }> = [
-  { id: "capture", label: "Capture", icon: SquarePen },
-  { id: "memos", label: "Memos", icon: ListTodo },
-  { id: "settings", label: "Settings", icon: Settings }
+  { id: "capture", label: "记录", icon: SquarePen },
+  { id: "memos", label: "队列", icon: ListTodo },
+  { id: "settings", label: "设置", icon: Settings }
 ];
 
 export function AppShell({
@@ -44,19 +44,19 @@ export function AppShell({
             <h1>{title}</h1>
           </div>
           {page === "memos" ? (
-            <button className="icon-text-button" type="button" aria-label="打开 History" onClick={() => onNavigate("history")}>
+            <button className="icon-text-button" type="button" aria-label="打开历史" onClick={() => onNavigate("history")}>
               <Clock3 size={18} />
-              History
+              历史
             </button>
           ) : null}
           {page === "history" ? (
             <button className="icon-text-button" type="button" onClick={() => onNavigate("memos")}>
-              返回 Memos
+              返回队列
             </button>
           ) : null}
         </header>
 
-        <section className="page-surface" aria-label={`${title} 页面`}>
+        <section className="page-surface" aria-label={`${title}页面`}>
           {children}
         </section>
       </main>
