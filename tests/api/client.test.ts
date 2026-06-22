@@ -9,6 +9,26 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
 }
 
 describe("frontend API client", () => {
+  it("binds the default browser fetch before making requests", async () => {
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn(function (this: unknown) {
+      if (this !== globalThis) {
+        throw new TypeError("Illegal invocation");
+      }
+
+      return Promise.resolve(jsonResponse({ memos: [] }));
+    }) as unknown as typeof fetch;
+    globalThis.fetch = fetchMock;
+
+    try {
+      const client = new ApiClient();
+
+      await expect(client.listMemos()).resolves.toEqual([]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("publishes a memo and refreshes active memos through Worker endpoints", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()

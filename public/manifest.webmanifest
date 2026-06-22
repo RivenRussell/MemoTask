@@ -1,0 +1,19 @@
+{
+  "name": "MemoTask",
+  "short_name": "MemoTask",
+  "description": "低压力 Memo 待办整理工具",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#EEF3F5",
+  "theme_color": "#EEF3F5",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

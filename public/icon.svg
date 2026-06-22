@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="MemoTask">
+  <rect width="512" height="512" rx="128" fill="#EEF3F5"/>
+  <path d="M154 132h204c22 0 40 18 40 40v168c0 22-18 40-40 40H154c-22 0-40-18-40-40V172c0-22 18-40 40-40Z" fill="#E6EEF1"/>
+  <path d="M174 198h164M174 256h116M174 314h144" fill="none" stroke="#6C8FA3" stroke-width="28" stroke-linecap="round"/>
+  <path d="m320 216 28 28 58-70" fill="none" stroke="#7EA88B" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

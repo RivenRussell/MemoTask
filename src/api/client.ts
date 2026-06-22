@@ -15,7 +15,7 @@ interface AiSettingsInput {
 }
 
 export class ApiClient {
-  constructor(private readonly fetcher: typeof fetch = fetch) {}
+  constructor(private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis)) {}
 
   async listMemos(): Promise<Memo[]> {
     const body = await this.request<{ memos: Memo[] }>("/api/memos");
