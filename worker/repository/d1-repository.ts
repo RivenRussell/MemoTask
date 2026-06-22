@@ -1,5 +1,5 @@
 import type { Memo, MemoTodo } from "../domain/types";
-import type { AiSettings, AiSettingsInput, DraftInput, MemoRepository, PublishMemoInput } from "./types";
+import type { AiSettings, AiSettingsInput, DraftInput, MemoRepository, PublishMemoInput, SyncStatus } from "./types";
 import { DEFAULT_PROMPT } from "./memory-repository";
 
 type MemoRow = {
@@ -187,6 +187,64 @@ export class D1Repository implements MemoRepository {
     return todo;
   }
 
+  async createTodo(
+    memoId: string,
+    input: { title: string; notes?: string | null; generatedByAi?: boolean },
+    now: string
+  ): Promise<MemoTodo> {
+    const maxOrder = await this.db
+      .prepare("SELECT MAX(sort_order) AS value FROM memo_todos WHERE memo_id = ? AND deleted_at IS NULL")
+      .bind(memoId)
+      .first<{ value: number | null }>();
+    const todo: MemoTodo = {
+      id: createId("todo"),
+      memoId,
+      title: input.title.trim(),
+      notes: input.notes?.trim() || null,
+      status: "todo",
+      sortOrder: (maxOrder?.value ?? 0) + 1,
+      generatedByAi: Boolean(input.generatedByAi),
+      createdAt: now,
+      updatedAt: now,
+      completedAt: null,
+      deletedAt: null
+    };
+    await this.upsertTodo(todo);
+    await this.db
+      .prepare("UPDATE memos SET auto_archive_suppressed_until_change = 0, updated_at = ? WHERE id = ?")
+      .bind(now, memoId)
+      .run();
+    return todo;
+  }
+
+  async deleteTodo(todoId: string, now: string): Promise<MemoTodo | null> {
+    const todo = await this.findTodo(todoId);
+    if (!todo) {
+      return null;
+    }
+
+    const deleted = { ...todo, deletedAt: now, updatedAt: now };
+    await this.upsertTodo(deleted);
+    await this.db
+      .prepare("UPDATE memos SET auto_archive_suppressed_until_change = 0, updated_at = ? WHERE id = ?")
+      .bind(now, todo.memoId)
+      .run();
+    return deleted;
+  }
+
+  async reorderTodos(memoId: string, todoIds: string[], now: string): Promise<MemoTodo[]> {
+    await this.db.batch(
+      todoIds.map((id, index) =>
+        this.db
+          .prepare("UPDATE memo_todos SET sort_order = ?, updated_at = ? WHERE id = ? AND memo_id = ? AND deleted_at IS NULL")
+          .bind(index + 1, now, id, memoId)
+      )
+    );
+    await this.db.prepare("UPDATE memos SET updated_at = ? WHERE id = ?").bind(now, memoId).run();
+    const memo = await this.findMemo(memoId);
+    return memo?.todos ?? [];
+  }
+
   async findMemo(memoId: string): Promise<Memo | null> {
     const row = await this.db.prepare("SELECT * FROM memos WHERE id = ?").bind(memoId).first<MemoRow>();
     if (!row) {
@@ -285,6 +343,28 @@ export class D1Repository implements MemoRepository {
     const settings = { ...existing, promptTemplate, updatedAt: now };
     await this.upsertAiSettings(settings);
     return settings;
+  }
+
+  async getSyncStatus(now: string): Promise<SyncStatus> {
+    const row = await this.db.prepare("SELECT * FROM sync_meta WHERE id = ?").bind("default").first<{
+      last_success_at: string | null;
+      last_error: string | null;
+      updated_at: string;
+    }>();
+    if (!row) {
+      await this.db
+        .prepare("INSERT INTO sync_meta (id, last_success_at, last_error, updated_at) VALUES (?, ?, ?, ?)")
+        .bind("default", now, null, now)
+        .run();
+      return { ok: true, lastSuccessAt: now, lastError: null, updatedAt: now };
+    }
+
+    return {
+      ok: row.last_error === null,
+      lastSuccessAt: row.last_success_at,
+      lastError: row.last_error,
+      updatedAt: row.updated_at
+    };
   }
 
   private async hydrateMemos(rows: MemoRow[]): Promise<Memo[]> {

@@ -189,6 +189,60 @@ export function createApi(options: ApiOptions = {}) {
     return context.json({ todo: updatedTodo });
   });
 
+  app.post("/api/memos/:memoId/todos", async (context) => {
+    const memo = await repository.findMemo(context.req.param("memoId"));
+    if (!memo || memo.deletedAt !== null) {
+      return context.json({ error: { code: "NOT_FOUND", message: "Memo 不存在" } }, 404);
+    }
+
+    const body = await readJson<{ title?: string; notes?: string | null; generatedByAi?: boolean }>(context);
+    if (!body.title?.trim()) {
+      return context.json({ error: { code: "VALIDATION_FAILED", message: "请输入 Todo 内容" } }, 400);
+    }
+
+    const todo = await repository.createTodo(
+      memo.id,
+      { title: body.title, notes: body.notes ?? null, generatedByAi: body.generatedByAi },
+      getNow(options)
+    );
+    return context.json({ todo }, 201);
+  });
+
+  app.patch("/api/todos/:id", async (context) => {
+    const todo = await repository.findTodo(context.req.param("id"));
+    if (!todo) {
+      return context.json({ error: { code: "NOT_FOUND", message: "Todo 不存在" } }, 404);
+    }
+
+    const body = await readJson<{ title?: string; notes?: string | null }>(context);
+    const updated = await repository.updateTodo({
+      ...todo,
+      title: body.title?.trim() || todo.title,
+      notes: body.notes === undefined ? todo.notes : body.notes,
+      updatedAt: getNow(options)
+    });
+    return context.json({ todo: updated });
+  });
+
+  app.delete("/api/todos/:id", async (context) => {
+    const deleted = await repository.deleteTodo(context.req.param("id"), getNow(options));
+    if (!deleted) {
+      return context.json({ error: { code: "NOT_FOUND", message: "Todo 不存在" } }, 404);
+    }
+
+    return context.json({ todo: deleted });
+  });
+
+  app.post("/api/todos/reorder", async (context) => {
+    const body = await readJson<{ memoId?: string; todoIds?: string[] }>(context);
+    if (!body.memoId || !Array.isArray(body.todoIds)) {
+      return context.json({ error: { code: "VALIDATION_FAILED", message: "排序数据无效" } }, 400);
+    }
+
+    const todos = await repository.reorderTodos(body.memoId, body.todoIds, getNow(options));
+    return context.json({ todos });
+  });
+
   app.get("/api/history", async (context) => {
     const memos = await repository.listHistoryMemos();
     return context.json({ memos });
@@ -266,6 +320,32 @@ export function createApi(options: ApiOptions = {}) {
     return context.json({ settings: publicAiSettings(settings) });
   });
 
+  app.post("/api/ai/test", async (context) => {
+    const settings = await repository.getAiSettings(getNow(options));
+    if (!settings.baseUrl || !settings.encryptedApiKey) {
+      return context.json({ error: { code: "AI_UNAVAILABLE", message: "请先在 Settings 配置 AI API" } }, 400);
+    }
+
+    const fetchAi = options.fetchAi ?? fetch;
+    const response = await fetchAi(
+      new Request(`${settings.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: settings.model,
+          messages: [{ role: "user", content: "MemoTask 连接测试" }],
+          max_tokens: 8
+        })
+      })
+    );
+
+    if (!response.ok) {
+      return context.json({ error: { code: "AI_FAILED", message: "AI 连接测试失败" } }, 502);
+    }
+
+    return context.json({ ok: true });
+  });
+
   app.post("/api/ai/analyze-draft", async (context) => {
     const body = await readJson<{ draftId?: string }>(context);
     const settings = await repository.getAiSettings(getNow(options));
@@ -304,6 +384,11 @@ export function createApi(options: ApiOptions = {}) {
     } catch {
       return context.json({ error: { code: "AI_INVALID_JSON", message: "AI 返回格式无效" } }, 502);
     }
+  });
+
+  app.get("/api/sync/status", async (context) => {
+    const status = await repository.getSyncStatus(getNow(options));
+    return context.json({ status });
   });
 
   return app;

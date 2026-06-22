@@ -1,5 +1,5 @@
 import type { Memo, MemoTodo } from "../domain/types";
-import type { AiSettings, AiSettingsInput, DraftInput, MemoRepository, PublishMemoInput } from "./types";
+import type { AiSettings, AiSettingsInput, DraftInput, MemoRepository, PublishMemoInput, SyncStatus } from "./types";
 
 let idCounter = 0;
 
@@ -11,7 +11,7 @@ function createId(prefix: string): string {
 function cloneMemo(memo: Memo): Memo {
   return {
     ...memo,
-    todos: memo.todos.map((todo) => ({ ...todo }))
+    todos: memo.todos.filter((todo) => todo.deletedAt === null).map((todo) => ({ ...todo }))
   };
 }
 
@@ -162,6 +162,73 @@ export class MemoryRepository implements MemoRepository {
     throw new Error("Todo not found");
   }
 
+  async createTodo(
+    memoId: string,
+    input: { title: string; notes?: string | null; generatedByAi?: boolean },
+    now: string
+  ): Promise<MemoTodo> {
+    const memo = this.memos.find((candidate) => candidate.id === memoId && candidate.deletedAt === null);
+    if (!memo) {
+      throw new Error("Memo not found");
+    }
+
+    const maxOrder = Math.max(0, ...memo.todos.filter((todo) => todo.deletedAt === null).map((todo) => todo.sortOrder));
+    const todo: MemoTodo = {
+      id: createId("todo"),
+      memoId,
+      title: input.title.trim(),
+      notes: input.notes?.trim() || null,
+      status: "todo",
+      sortOrder: maxOrder + 1,
+      generatedByAi: Boolean(input.generatedByAi),
+      createdAt: now,
+      updatedAt: now,
+      completedAt: null,
+      deletedAt: null
+    };
+    memo.todos.push(todo);
+    memo.updatedAt = now;
+    memo.autoArchiveSuppressedUntilChange = false;
+    return { ...todo };
+  }
+
+  async deleteTodo(todoId: string, now: string): Promise<MemoTodo | null> {
+    const todo = this.memos.flatMap((memo) => memo.todos).find((candidate) => candidate.id === todoId);
+    if (!todo || todo.deletedAt !== null) {
+      return null;
+    }
+
+    todo.deletedAt = now;
+    todo.updatedAt = now;
+    const memo = this.memos.find((candidate) => candidate.id === todo.memoId);
+    if (memo) {
+      memo.updatedAt = now;
+      memo.autoArchiveSuppressedUntilChange = false;
+    }
+    return { ...todo };
+  }
+
+  async reorderTodos(memoId: string, todoIds: string[], now: string): Promise<MemoTodo[]> {
+    const memo = this.memos.find((candidate) => candidate.id === memoId && candidate.deletedAt === null);
+    if (!memo) {
+      return [];
+    }
+
+    const orderById = new Map(todoIds.map((id, index) => [id, index + 1]));
+    for (const todo of memo.todos) {
+      const order = orderById.get(todo.id);
+      if (order !== undefined && todo.deletedAt === null) {
+        todo.sortOrder = order;
+        todo.updatedAt = now;
+      }
+    }
+    memo.updatedAt = now;
+    return memo.todos
+      .filter((todo) => todo.deletedAt === null)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((todo) => ({ ...todo }));
+  }
+
   async findMemo(memoId: string): Promise<Memo | null> {
     const memo = this.memos.find((candidate) => candidate.id === memoId);
     return memo ? cloneMemo(memo) : null;
@@ -265,6 +332,15 @@ export class MemoryRepository implements MemoRepository {
       updatedAt: now
     };
     return { ...this.aiSettings };
+  }
+
+  async getSyncStatus(now: string): Promise<SyncStatus> {
+    return {
+      ok: true,
+      lastSuccessAt: now,
+      lastError: null,
+      updatedAt: now
+    };
   }
 
   private nextFrontSortOrder(): number {

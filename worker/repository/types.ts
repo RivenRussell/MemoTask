@@ -35,6 +35,13 @@ export interface AiSettingsInput {
   promptTemplate: string;
 }
 
+export interface SyncStatus {
+  ok: boolean;
+  lastSuccessAt: string | null;
+  lastError: string | null;
+  updatedAt: string;
+}
+
 export interface MemoRepository {
   createDraft(input: DraftInput, now: string): Promise<Memo>;
   listRecentDrafts(limit: number): Promise<Memo[]>;
@@ -44,6 +51,9 @@ export interface MemoRepository {
   searchHistoryMemos(query: string): Promise<Memo[]>;
   findTodo(todoId: string): Promise<MemoTodo | null>;
   updateTodo(todo: MemoTodo): Promise<MemoTodo>;
+  createTodo(memoId: string, input: { title: string; notes?: string | null; generatedByAi?: boolean }, now: string): Promise<MemoTodo>;
+  deleteTodo(todoId: string, now: string): Promise<MemoTodo | null>;
+  reorderTodos(memoId: string, todoIds: string[], now: string): Promise<MemoTodo[]>;
   findMemo(memoId: string): Promise<Memo | null>;
   saveMemo(memo: Memo): Promise<Memo>;
   reorderMemos(memoIds: string[], now: string): Promise<Memo[]>;
@@ -53,4 +63,5 @@ export interface MemoRepository {
   getAiSettings(now: string): Promise<AiSettings>;
   saveAiSettings(input: AiSettingsInput, now: string): Promise<AiSettings>;
   resetAiPrompt(promptTemplate: string, now: string): Promise<AiSettings>;
+  getSyncStatus(now: string): Promise<SyncStatus>;
 }
