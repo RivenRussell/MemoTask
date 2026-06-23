@@ -152,7 +152,7 @@ describe("D1Repository", () => {
     );
     const repository = new D1Repository(db as unknown as D1Database);
 
-    const memos = await repository.listActiveMemos();
+    const memos = await repository.listActiveMemos("default");
 
     expect(memos).toHaveLength(1);
     expect(memos[0].todos[0]).toMatchObject({ title: "保持原位置", status: "done", sortOrder: 1 });
@@ -185,7 +185,7 @@ describe("D1Repository", () => {
       "2026-06-22T12:01:00.000Z"
     );
 
-    await repository.saveMemo(archived);
+    await repository.saveMemo("default", archived);
 
     expect(db.statements.some((statement) => statement.query.includes("INTO memos"))).toBe(true);
     expect(db.statements.flatMap((statement) => statement.values)).toContain("history");
@@ -197,6 +197,7 @@ describe("D1Repository", () => {
     const repository = new D1Repository(db as unknown as D1Database);
 
     const settings = await repository.saveAiSettings(
+      "default",
       {
         baseUrl: "https://api.example.com/v1",
         model: "dsv4-pro",
@@ -210,5 +211,6 @@ describe("D1Repository", () => {
     expect(settings.apiKeyMask).toBe("test...cdef");
     expect(JSON.stringify(settings)).not.toContain("1234567890");
     expect(settings.encryptedApiKey).toBe("v1:iv:cipher");
+    expect(settings.userId).toBe("default");
   });
 });

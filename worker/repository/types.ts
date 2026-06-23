@@ -44,26 +44,26 @@ export interface SyncStatus {
 }
 
 export interface MemoRepository {
-  createDraft(input: DraftInput, now: string): Promise<Memo>;
-  updateDraft(draftId: string, input: DraftInput, now: string): Promise<Memo | null>;
-  listRecentDrafts(limit: number): Promise<Memo[]>;
-  publishMemo(input: PublishMemoInput, now: string): Promise<Memo>;
-  listActiveMemos(): Promise<Memo[]>;
-  listHistoryMemos(): Promise<Memo[]>;
-  searchHistoryMemos(query: string): Promise<Memo[]>;
-  findTodo(todoId: string): Promise<MemoTodo | null>;
-  updateTodo(todo: MemoTodo): Promise<MemoTodo>;
-  createTodo(memoId: string, input: { title: string; notes?: string | null; generatedByAi?: boolean }, now: string): Promise<MemoTodo>;
-  deleteTodo(todoId: string, now: string): Promise<MemoTodo | null>;
-  reorderTodos(memoId: string, todoIds: string[], now: string): Promise<MemoTodo[]>;
-  findMemo(memoId: string): Promise<Memo | null>;
-  saveMemo(memo: Memo): Promise<Memo>;
-  reorderMemos(memoIds: string[], now: string): Promise<Memo[]>;
-  softDeleteHistoryMemos(memoIds: string[], now: string): Promise<Memo[]>;
-  restoreDeletedMemos(memoIds: string[], now: string): Promise<Memo[]>;
-  listExportableMemos(): Promise<Memo[]>;
-  getAiSettings(now: string): Promise<AiSettings>;
-  saveAiSettings(input: AiSettingsInput, now: string): Promise<AiSettings>;
-  resetAiPrompt(promptTemplate: string, now: string): Promise<AiSettings>;
-  getSyncStatus(now: string): Promise<SyncStatus>;
+  createDraft(userId: string, input: DraftInput, now: string): Promise<Memo>;
+  updateDraft(userId: string, draftId: string, input: DraftInput, now: string): Promise<Memo | null>;
+  listRecentDrafts(userId: string, limit: number): Promise<Memo[]>;
+  publishMemo(userId: string, input: PublishMemoInput, now: string): Promise<Memo>;
+  listActiveMemos(userId: string): Promise<Memo[]>;
+  listHistoryMemos(userId: string): Promise<Memo[]>;
+  searchHistoryMemos(userId: string, query: string): Promise<Memo[]>;
+  findTodo(userId: string, todoId: string): Promise<MemoTodo | null>;
+  updateTodo(userId: string, todo: MemoTodo): Promise<MemoTodo>;
+  createTodo(userId: string, memoId: string, input: { title: string; notes?: string | null; generatedByAi?: boolean }, now: string): Promise<MemoTodo>;
+  deleteTodo(userId: string, todoId: string, now: string): Promise<MemoTodo | null>;
+  reorderTodos(userId: string, memoId: string, todoIds: string[], now: string): Promise<MemoTodo[]>;
+  findMemo(userId: string, memoId: string): Promise<Memo | null>;
+  saveMemo(userId: string, memo: Memo): Promise<Memo>;
+  reorderMemos(userId: string, memoIds: string[], now: string): Promise<Memo[]>;
+  softDeleteHistoryMemos(userId: string, memoIds: string[], now: string): Promise<Memo[]>;
+  restoreDeletedMemos(userId: string, memoIds: string[], now: string): Promise<Memo[]>;
+  listExportableMemos(userId: string): Promise<Memo[]>;
+  getAiSettings(userId: string, now: string): Promise<AiSettings>;
+  saveAiSettings(userId: string, input: AiSettingsInput, now: string): Promise<AiSettings>;
+  resetAiPrompt(userId: string, promptTemplate: string, now: string): Promise<AiSettings>;
+  getSyncStatus(userId: string, now: string): Promise<SyncStatus>;
 }

@@ -150,6 +150,7 @@ test("visual QA keeps the empty queue focused", async ({ page }) => {
 
 async function seedVisualQaData(repository: MemoRepository) {
   await repository.createDraft(
+    "default",
     {
       title: "视觉验收草稿",
       content: "用于确认 Capture 页最近草稿区域不是空白。"
@@ -158,6 +159,7 @@ async function seedVisualQaData(repository: MemoRepository) {
   );
 
   const activeMemo = await repository.publishMemo(
+    "default",
     {
       title: "双端验收 Memo",
       content: "用于确认 PC 和 Android 页面不白屏，按钮不裁切。",
@@ -170,7 +172,7 @@ async function seedVisualQaData(repository: MemoRepository) {
     },
     "2026-06-22T12:01:00.000Z"
   );
-  await repository.updateTodo({
+  await repository.updateTodo("default", {
     ...activeMemo.todos[0],
     status: "done",
     completedAt: "2026-06-22T12:02:00.000Z",
@@ -178,6 +180,7 @@ async function seedVisualQaData(repository: MemoRepository) {
   });
 
   await repository.publishMemo(
+    "default",
     {
       title: "跨端排序 Memo",
       content: "用于确认队列里存在多张 Memo 卡片。",
@@ -187,6 +190,7 @@ async function seedVisualQaData(repository: MemoRepository) {
   );
 
   const historyMemo = await repository.publishMemo(
+    "default",
     {
       title: "已归档验收 Memo",
       content: "归档后保存完整 Memo，用于确认 History 页面不白屏。",
@@ -196,6 +200,7 @@ async function seedVisualQaData(repository: MemoRepository) {
   );
 
   await repository.saveMemo(
+    "default",
     moveMemoToHistory(
       {
         ...historyMemo,

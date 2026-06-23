@@ -50,7 +50,7 @@ describe("AI settings and analyze API", () => {
     expect(response.status).toBe(200);
     expect(body.settings.apiKeyMask).toBe("test...cdef");
     expect(JSON.stringify(body)).not.toContain("1234567890");
-    expect(JSON.stringify(await repository.getAiSettings("2026-06-22T12:00:00.000Z"))).not.toContain("1234567890");
+    expect(JSON.stringify(await repository.getAiSettings("default", "2026-06-22T12:00:00.000Z"))).not.toContain("1234567890");
   });
 
   it("requires the server encryption key before storing an API key", async () => {

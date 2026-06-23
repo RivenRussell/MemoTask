@@ -14,7 +14,7 @@ export function createUiTestClient(options?: ((request: Request) => Promise<Resp
   const fetchAi = typeof options === "function" ? options : options?.fetchAi;
   const repository = new MemoryRepository();
   for (const memo of typeof options === "function" ? [] : (options?.initialMemos ?? [])) {
-    void repository.saveMemo(memo);
+    void repository.saveMemo("default", memo);
   }
   const app = createApi({
     repository,

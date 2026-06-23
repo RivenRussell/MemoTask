@@ -50,10 +50,10 @@ type AiSettingsRow = {
 export class D1Repository implements MemoRepository {
   constructor(private readonly db: D1Database) {}
 
-  async createDraft(input: DraftInput, now: string): Promise<Memo> {
+  async createDraft(userId: string, input: DraftInput, now: string): Promise<Memo> {
     const draft: Memo = {
       id: createId("memo"),
-      userId: "default",
+      userId,
       title: input.title?.trim() || "未命名 Memo",
       content: input.content,
       status: "draft",
@@ -71,13 +71,13 @@ export class D1Repository implements MemoRepository {
       todos: []
     };
 
-    await this.saveMemo(draft);
-    await this.trimDrafts(3);
+    await this.saveMemo(userId, draft);
+    await this.trimDrafts(userId, 3);
     return draft;
   }
 
-  async updateDraft(draftId: string, input: DraftInput, now: string): Promise<Memo | null> {
-    const draft = await this.findMemo(draftId);
+  async updateDraft(userId: string, draftId: string, input: DraftInput, now: string): Promise<Memo | null> {
+    const draft = await this.findMemo(userId, draftId);
     if (!draft || draft.status !== "draft" || draft.deletedAt !== null) {
       return null;
     }
@@ -86,15 +86,15 @@ export class D1Repository implements MemoRepository {
       .prepare(
         `UPDATE memos
          SET title = ?, content = ?, updated_at = ?
-         WHERE id = ? AND status = 'draft' AND deleted_at IS NULL`
+         WHERE id = ? AND user_id = ? AND status = 'draft' AND deleted_at IS NULL`
       )
-      .bind(input.title?.trim() || "未命名 Memo", input.content, now, draftId)
+      .bind(input.title?.trim() || "未命名 Memo", input.content, now, draftId, userId)
       .run();
-    await this.trimDrafts(3);
-    return this.findMemo(draftId);
+    await this.trimDrafts(userId, 3);
+    return this.findMemo(userId, draftId);
   }
 
-  async listRecentDrafts(limit: number): Promise<Memo[]> {
+  async listRecentDrafts(userId: string, limit: number): Promise<Memo[]> {
     const rows = await this.db
       .prepare(
         `SELECT * FROM memos
@@ -102,16 +102,16 @@ export class D1Repository implements MemoRepository {
          ORDER BY updated_at DESC, id DESC
          LIMIT ?`
       )
-      .bind("default", limit)
+      .bind(userId, limit)
       .all<MemoRow>();
     return this.hydrateMemos(rows.results);
   }
 
-  async publishMemo(input: PublishMemoInput, now: string): Promise<Memo> {
-    const existing = input.draftId ? await this.findMemo(input.draftId) : null;
-    const nextSortOrder = await this.nextFrontSortOrder();
+  async publishMemo(userId: string, input: PublishMemoInput, now: string): Promise<Memo> {
+    const existing = input.draftId ? await this.findMemo(userId, input.draftId) : null;
+    const nextSortOrder = await this.nextFrontSortOrder(userId);
     const memo: Memo = {
-      ...(existing ?? createEmptyMemo(createId("memo"), now)),
+      ...(existing ?? createEmptyMemo(userId, createId("memo"), now)),
       title: input.title.trim(),
       content: input.content,
       status: "active",
@@ -136,38 +136,38 @@ export class D1Repository implements MemoRepository {
     };
     memo.todos = memo.todos.map((todo) => ({ ...todo, memoId: memo.id }));
 
-    await this.saveMemo(memo);
-    return (await this.findMemo(memo.id)) ?? memo;
+    await this.saveMemo(userId, memo);
+    return (await this.findMemo(userId, memo.id)) ?? memo;
   }
 
-  async listActiveMemos(): Promise<Memo[]> {
+  async listActiveMemos(userId: string): Promise<Memo[]> {
     const rows = await this.db
       .prepare(
         `SELECT * FROM memos
          WHERE user_id = ? AND status = 'active' AND deleted_at IS NULL
          ORDER BY sort_order ASC`
       )
-      .bind("default")
+      .bind(userId)
       .all<MemoRow>();
     return this.hydrateMemos(rows.results);
   }
 
-  async listHistoryMemos(): Promise<Memo[]> {
+  async listHistoryMemos(userId: string): Promise<Memo[]> {
     const rows = await this.db
       .prepare(
         `SELECT * FROM memos
          WHERE user_id = ? AND status = 'history' AND deleted_at IS NULL
          ORDER BY history_at DESC, updated_at DESC`
       )
-      .bind("default")
+      .bind(userId)
       .all<MemoRow>();
     return this.hydrateMemos(rows.results);
   }
 
-  async searchHistoryMemos(query: string): Promise<Memo[]> {
+  async searchHistoryMemos(userId: string, query: string): Promise<Memo[]> {
     const normalized = query.trim();
     if (!normalized) {
-      return this.listHistoryMemos();
+      return this.listHistoryMemos(userId);
     }
 
     const pattern = `%${normalized.toLowerCase()}%`;
@@ -187,29 +187,44 @@ export class D1Repository implements MemoRepository {
            )
          ORDER BY memos.history_at DESC, memos.updated_at DESC`
       )
-      .bind("default", pattern, pattern, pattern, pattern)
+      .bind(userId, pattern, pattern, pattern, pattern)
       .all<MemoRow>();
     return this.hydrateMemos(rows.results);
   }
 
-  async findTodo(todoId: string): Promise<MemoTodo | null> {
+  async findTodo(userId: string, todoId: string): Promise<MemoTodo | null> {
     const row = await this.db
-      .prepare("SELECT * FROM memo_todos WHERE id = ? AND deleted_at IS NULL")
-      .bind(todoId)
+      .prepare(
+        `SELECT memo_todos.*
+         FROM memo_todos
+         INNER JOIN memos ON memos.id = memo_todos.memo_id
+         WHERE memo_todos.id = ? AND memos.user_id = ? AND memo_todos.deleted_at IS NULL`
+      )
+      .bind(todoId, userId)
       .first<TodoRow>();
     return row ? mapTodo(row) : null;
   }
 
-  async updateTodo(todo: MemoTodo): Promise<MemoTodo> {
+  async updateTodo(userId: string, todo: MemoTodo): Promise<MemoTodo> {
+    const memo = await this.findMemo(userId, todo.memoId);
+    if (!memo) {
+      throw new Error("Todo not found");
+    }
     await this.upsertTodo(todo);
     return todo;
   }
 
   async createTodo(
+    userId: string,
     memoId: string,
     input: { title: string; notes?: string | null; generatedByAi?: boolean },
     now: string
   ): Promise<MemoTodo> {
+    const memo = await this.findMemo(userId, memoId);
+    if (!memo) {
+      throw new Error("Memo not found");
+    }
+
     const maxOrder = await this.db
       .prepare("SELECT MAX(sort_order) AS value FROM memo_todos WHERE memo_id = ? AND deleted_at IS NULL")
       .bind(memoId)
@@ -235,8 +250,8 @@ export class D1Repository implements MemoRepository {
     return todo;
   }
 
-  async deleteTodo(todoId: string, now: string): Promise<MemoTodo | null> {
-    const todo = await this.findTodo(todoId);
+  async deleteTodo(userId: string, todoId: string, now: string): Promise<MemoTodo | null> {
+    const todo = await this.findTodo(userId, todoId);
     if (!todo) {
       return null;
     }
@@ -250,7 +265,12 @@ export class D1Repository implements MemoRepository {
     return deleted;
   }
 
-  async reorderTodos(memoId: string, todoIds: string[], now: string): Promise<MemoTodo[]> {
+  async reorderTodos(userId: string, memoId: string, todoIds: string[], now: string): Promise<MemoTodo[]> {
+    const memo = await this.findMemo(userId, memoId);
+    if (!memo) {
+      return [];
+    }
+
     await this.db.batch(
       todoIds.map((id, index) =>
         this.db
@@ -259,12 +279,12 @@ export class D1Repository implements MemoRepository {
       )
     );
     await this.db.prepare("UPDATE memos SET updated_at = ? WHERE id = ?").bind(now, memoId).run();
-    const memo = await this.findMemo(memoId);
-    return memo?.todos ?? [];
+    const updated = await this.findMemo(userId, memoId);
+    return updated?.todos ?? [];
   }
 
-  async findMemo(memoId: string): Promise<Memo | null> {
-    const row = await this.db.prepare("SELECT * FROM memos WHERE id = ?").bind(memoId).first<MemoRow>();
+  async findMemo(userId: string, memoId: string): Promise<Memo | null> {
+    const row = await this.db.prepare("SELECT * FROM memos WHERE id = ? AND user_id = ?").bind(memoId, userId).first<MemoRow>();
     if (!row) {
       return null;
     }
@@ -273,76 +293,77 @@ export class D1Repository implements MemoRepository {
     return memo ?? null;
   }
 
-  async saveMemo(memo: Memo): Promise<Memo> {
-    await this.upsertMemo(memo);
+  async saveMemo(userId: string, memo: Memo): Promise<Memo> {
+    const scopedMemo = { ...memo, userId };
+    await this.upsertMemo(scopedMemo);
     if (memo.todos.length > 0) {
       await this.db.batch(memo.todos.map((todo) => this.todoStatement(todo)));
     }
-    return memo;
+    return scopedMemo;
   }
 
-  async reorderMemos(memoIds: string[], now: string): Promise<Memo[]> {
+  async reorderMemos(userId: string, memoIds: string[], now: string): Promise<Memo[]> {
     await this.db.batch(
       memoIds.map((id, index) =>
         this.db
-          .prepare("UPDATE memos SET sort_order = ?, updated_at = ? WHERE id = ? AND status = 'active' AND deleted_at IS NULL")
-          .bind(index + 1, now, id)
+          .prepare("UPDATE memos SET sort_order = ?, updated_at = ? WHERE id = ? AND user_id = ? AND status = 'active' AND deleted_at IS NULL")
+          .bind(index + 1, now, id, userId)
       )
     );
-    return this.listActiveMemos();
+    return this.listActiveMemos(userId);
   }
 
-  async softDeleteHistoryMemos(memoIds: string[], now: string): Promise<Memo[]> {
+  async softDeleteHistoryMemos(userId: string, memoIds: string[], now: string): Promise<Memo[]> {
     const deleted: Memo[] = [];
     for (const id of memoIds) {
-      const memo = await this.findMemo(id);
+      const memo = await this.findMemo(userId, id);
       if (memo?.status === "history" && memo.deletedAt === null) {
         const next = { ...memo, status: "deleted" as const, deletedAt: now, updatedAt: now };
-        await this.saveMemo(next);
+        await this.saveMemo(userId, next);
         deleted.push(next);
       }
     }
     return deleted;
   }
 
-  async restoreDeletedMemos(memoIds: string[], now: string): Promise<Memo[]> {
+  async restoreDeletedMemos(userId: string, memoIds: string[], now: string): Promise<Memo[]> {
     const restored: Memo[] = [];
     for (const id of memoIds) {
-      const memo = await this.findMemo(id);
+      const memo = await this.findMemo(userId, id);
       if (memo?.status === "deleted") {
         const next = { ...memo, status: "history" as const, deletedAt: null, updatedAt: now };
-        await this.saveMemo(next);
+        await this.saveMemo(userId, next);
         restored.push(next);
       }
     }
     return restored;
   }
 
-  async listExportableMemos(): Promise<Memo[]> {
+  async listExportableMemos(userId: string): Promise<Memo[]> {
     const rows = await this.db
       .prepare(
         `SELECT * FROM memos
          WHERE user_id = ? AND status IN ('active', 'history') AND deleted_at IS NULL
          ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, sort_order ASC, history_at DESC`
       )
-      .bind("default")
+      .bind(userId)
       .all<MemoRow>();
     return this.hydrateMemos(rows.results);
   }
 
-  async getAiSettings(now: string): Promise<AiSettings> {
-    const row = await this.db.prepare("SELECT * FROM ai_settings WHERE id = ?").bind("default").first<AiSettingsRow>();
+  async getAiSettings(userId: string, now: string): Promise<AiSettings> {
+    const row = await this.db.prepare("SELECT * FROM ai_settings WHERE id = ? AND user_id = ?").bind(userId, userId).first<AiSettingsRow>();
     if (row) {
       return mapAiSettings(row);
     }
 
-    const settings = createDefaultAiSettings(now);
+    const settings = createDefaultAiSettings(userId, now);
     await this.upsertAiSettings(settings);
     return settings;
   }
 
-  async saveAiSettings(input: AiSettingsInput, now: string): Promise<AiSettings> {
-    const existing = await this.getAiSettings(now);
+  async saveAiSettings(userId: string, input: AiSettingsInput, now: string): Promise<AiSettings> {
+    const existing = await this.getAiSettings(userId, now);
     const settings: AiSettings = {
       ...existing,
       baseUrl: input.baseUrl.trim(),
@@ -356,15 +377,15 @@ export class D1Repository implements MemoRepository {
     return settings;
   }
 
-  async resetAiPrompt(promptTemplate: string, now: string): Promise<AiSettings> {
-    const existing = await this.getAiSettings(now);
+  async resetAiPrompt(userId: string, promptTemplate: string, now: string): Promise<AiSettings> {
+    const existing = await this.getAiSettings(userId, now);
     const settings = { ...existing, promptTemplate, updatedAt: now };
     await this.upsertAiSettings(settings);
     return settings;
   }
 
-  async getSyncStatus(now: string): Promise<SyncStatus> {
-    const row = await this.db.prepare("SELECT * FROM sync_meta WHERE id = ?").bind("default").first<{
+  async getSyncStatus(userId: string, now: string): Promise<SyncStatus> {
+    const row = await this.db.prepare("SELECT * FROM sync_meta WHERE id = ?").bind(userId).first<{
       last_success_at: string | null;
       last_error: string | null;
       updated_at: string;
@@ -372,7 +393,7 @@ export class D1Repository implements MemoRepository {
     if (!row) {
       await this.db
         .prepare("INSERT INTO sync_meta (id, last_success_at, last_error, updated_at) VALUES (?, ?, ?, ?)")
-        .bind("default", now, null, now)
+        .bind(userId, now, null, now)
         .run();
       return { ok: true, lastSuccessAt: now, lastError: null, updatedAt: now };
     }
@@ -404,15 +425,15 @@ export class D1Repository implements MemoRepository {
     return rows.map((row) => ({ ...mapMemo(row), todos: todosByMemo.get(row.id) ?? [] }));
   }
 
-  private async nextFrontSortOrder(): Promise<number> {
+  private async nextFrontSortOrder(userId: string): Promise<number> {
     const row = await this.db
       .prepare("SELECT MIN(sort_order) AS value FROM memos WHERE user_id = ? AND status = 'active' AND deleted_at IS NULL")
-      .bind("default")
+      .bind(userId)
       .first<{ value: number | null }>();
     return row?.value === null || row?.value === undefined ? 1000 : row.value - 1;
   }
 
-  private async trimDrafts(limit: number): Promise<void> {
+  private async trimDrafts(userId: string, limit: number): Promise<void> {
     await this.db
       .prepare(
         `UPDATE memos
@@ -425,7 +446,7 @@ export class D1Repository implements MemoRepository {
              LIMIT ?
            )`
       )
-      .bind("default", limit)
+      .bind(userId, limit)
       .run();
   }
 
@@ -602,10 +623,10 @@ function groupTodos(todos: MemoTodo[]): Map<string, MemoTodo[]> {
   return byMemo;
 }
 
-function createEmptyMemo(id: string, now: string): Memo {
+function createEmptyMemo(userId: string, id: string, now: string): Memo {
   return {
     id,
-    userId: "default",
+    userId,
     title: "未命名 Memo",
     content: "",
     status: "draft",
@@ -624,10 +645,10 @@ function createEmptyMemo(id: string, now: string): Memo {
   };
 }
 
-function createDefaultAiSettings(now: string): AiSettings {
+function createDefaultAiSettings(userId: string, now: string): AiSettings {
   return {
-    id: "default",
-    userId: "default",
+    id: userId,
+    userId,
     baseUrl: DEFAULT_AI_BASE_URL,
     model: DEFAULT_AI_MODEL,
     encryptedApiKey: null,

@@ -311,31 +311,34 @@ export function createApi(options: ApiOptions = {}) {
   app.post("/api/drafts", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
+    const userId = auth.user?.id ?? "default";
     const body = await readJson<{ title?: string; content?: string }>(context);
     if (!body.content?.trim()) {
       return context.json({ error: { code: "VALIDATION_FAILED", message: "请输入 Memo 内容" } }, 400);
     }
 
-    const draft = await repository.createDraft({ title: body.title, content: body.content }, getNow(options));
+    const draft = await repository.createDraft(userId, { title: body.title, content: body.content }, getNow(options));
     return context.json({ draft }, 201);
   });
 
   app.get("/api/drafts/recent", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
-    const drafts = await repository.listRecentDrafts(3);
+    const userId = auth.user?.id ?? "default";
+    const drafts = await repository.listRecentDrafts(userId, 3);
     return context.json({ drafts });
   });
 
   app.patch("/api/drafts/:id", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
+    const userId = auth.user?.id ?? "default";
     const body = await readJson<{ title?: string; content?: string }>(context);
     if (!body.content?.trim()) {
       return context.json({ error: { code: "VALIDATION_FAILED", message: "请输入 Memo 内容" } }, 400);
     }
 
-    const draft = await repository.updateDraft(context.req.param("id"), { title: body.title, content: body.content }, getNow(options));
+    const draft = await repository.updateDraft(userId, context.req.param("id"), { title: body.title, content: body.content }, getNow(options));
     if (!draft) {
       return context.json({ error: { code: "NOT_FOUND", message: "草稿不存在" } }, 404);
     }
@@ -346,6 +349,7 @@ export function createApi(options: ApiOptions = {}) {
   app.post("/api/memos/publish", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
+    const userId = auth.user?.id ?? "default";
     const body = await readJson<{
       title?: string;
       content?: string;
@@ -357,6 +361,7 @@ export function createApi(options: ApiOptions = {}) {
     }
 
     const memo = await repository.publishMemo(
+      userId,
       {
         draftId: body.draftId,
         title: body.title?.trim() || "未命名 Memo",
@@ -378,14 +383,16 @@ export function createApi(options: ApiOptions = {}) {
   app.get("/api/memos", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
-    const memos = await repository.listActiveMemos();
+    const userId = auth.user?.id ?? "default";
+    const memos = await repository.listActiveMemos(userId);
     return context.json({ memos });
   });
 
   app.get("/api/memos/:id", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
-    const memo = await repository.findMemo(context.req.param("id"));
+    const userId = auth.user?.id ?? "default";
+    const memo = await repository.findMemo(userId, context.req.param("id"));
     if (!memo || memo.deletedAt !== null) {
       return context.json({ error: { code: "NOT_FOUND", message: "Memo 不存在" } }, 404);
     }
@@ -396,13 +403,14 @@ export function createApi(options: ApiOptions = {}) {
   app.patch("/api/memos/:id", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
-    const memo = await repository.findMemo(context.req.param("id"));
+    const userId = auth.user?.id ?? "default";
+    const memo = await repository.findMemo(userId, context.req.param("id"));
     if (!memo || memo.deletedAt !== null) {
       return context.json({ error: { code: "NOT_FOUND", message: "Memo 不存在" } }, 404);
     }
 
     const body = await readJson<{ title?: string; content?: string }>(context);
-    const updated = await repository.saveMemo({
+    const updated = await repository.saveMemo(userId, {
       ...memo,
       title: body.title?.trim() || memo.title,
       content: body.content ?? memo.content,
@@ -414,54 +422,59 @@ export function createApi(options: ApiOptions = {}) {
   app.post("/api/memos/:id/archive", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
-    const memo = await repository.findMemo(context.req.param("id"));
+    const userId = auth.user?.id ?? "default";
+    const memo = await repository.findMemo(userId, context.req.param("id"));
     if (!memo || memo.status !== "active" || memo.deletedAt !== null) {
       return context.json({ error: { code: "NOT_FOUND", message: "Memo 不存在" } }, 404);
     }
 
-    const archived = await repository.saveMemo(moveMemoToHistory(memo, "archived", getNow(options)));
+    const archived = await repository.saveMemo(userId, moveMemoToHistory(memo, "archived", getNow(options)));
     return context.json({ memo: archived });
   });
 
   app.post("/api/memos/:id/restore", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
-    const memo = await repository.findMemo(context.req.param("id"));
+    const userId = auth.user?.id ?? "default";
+    const memo = await repository.findMemo(userId, context.req.param("id"));
     if (!memo || memo.status !== "history" || memo.deletedAt !== null) {
       return context.json({ error: { code: "NOT_FOUND", message: "Memo 不存在" } }, 404);
     }
 
-    const restored = await repository.saveMemo(restoreMemoFromHistory(memo, getNow(options)));
+    const restored = await repository.saveMemo(userId, restoreMemoFromHistory(memo, getNow(options)));
     return context.json({ memo: restored });
   });
 
   app.post("/api/memos/reorder", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
+    const userId = auth.user?.id ?? "default";
     const body = await readJson<{ memoIds?: string[] }>(context);
     if (!Array.isArray(body.memoIds)) {
       return context.json({ error: { code: "VALIDATION_FAILED", message: "排序数据无效" } }, 400);
     }
 
-    const memos = await repository.reorderMemos(body.memoIds, getNow(options));
+    const memos = await repository.reorderMemos(userId, body.memoIds, getNow(options));
     return context.json({ memos });
   });
 
   app.post("/api/todos/:id/toggle", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
-    const todo = await repository.findTodo(context.req.param("id"));
+    const userId = auth.user?.id ?? "default";
+    const todo = await repository.findTodo(userId, context.req.param("id"));
     if (!todo) {
       return context.json({ error: { code: "NOT_FOUND", message: "Todo 不存在" } }, 404);
     }
 
     const now = getNow(options);
-    const updatedTodo = await repository.updateTodo(toggleTodoStatus(todo, now));
-    const memo = await repository.findMemo(updatedTodo.memoId);
+    const updatedTodo = await repository.updateTodo(userId, toggleTodoStatus(todo, now));
+    const memo = await repository.findMemo(userId, updatedTodo.memoId);
     if (memo) {
       const nextTodos = memo.todos.map((candidate) => (candidate.id === updatedTodo.id ? updatedTodo : candidate));
       const shouldArchive = shouldAutoArchiveMemo(nextTodos, memo.autoArchiveSuppressedUntilChange);
       await repository.saveMemo(
+        userId,
         shouldArchive
           ? moveMemoToHistory({ ...memo, todos: nextTodos }, "completed", now)
           : { ...memo, todos: nextTodos, autoArchiveSuppressedUntilChange: false, updatedAt: now }
@@ -474,7 +487,8 @@ export function createApi(options: ApiOptions = {}) {
   app.post("/api/memos/:memoId/todos", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
-    const memo = await repository.findMemo(context.req.param("memoId"));
+    const userId = auth.user?.id ?? "default";
+    const memo = await repository.findMemo(userId, context.req.param("memoId"));
     if (!memo || memo.deletedAt !== null) {
       return context.json({ error: { code: "NOT_FOUND", message: "Memo 不存在" } }, 404);
     }
@@ -485,6 +499,7 @@ export function createApi(options: ApiOptions = {}) {
     }
 
     const todo = await repository.createTodo(
+      userId,
       memo.id,
       { title: body.title, notes: body.notes ?? null, generatedByAi: body.generatedByAi },
       getNow(options)
@@ -495,13 +510,14 @@ export function createApi(options: ApiOptions = {}) {
   app.patch("/api/todos/:id", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
-    const todo = await repository.findTodo(context.req.param("id"));
+    const userId = auth.user?.id ?? "default";
+    const todo = await repository.findTodo(userId, context.req.param("id"));
     if (!todo) {
       return context.json({ error: { code: "NOT_FOUND", message: "Todo 不存在" } }, 404);
     }
 
     const body = await readJson<{ title?: string; notes?: string | null }>(context);
-    const updated = await repository.updateTodo({
+    const updated = await repository.updateTodo(userId, {
       ...todo,
       title: body.title?.trim() || todo.title,
       notes: body.notes === undefined ? todo.notes : body.notes,
@@ -513,7 +529,8 @@ export function createApi(options: ApiOptions = {}) {
   app.delete("/api/todos/:id", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
-    const deleted = await repository.deleteTodo(context.req.param("id"), getNow(options));
+    const userId = auth.user?.id ?? "default";
+    const deleted = await repository.deleteTodo(userId, context.req.param("id"), getNow(options));
     if (!deleted) {
       return context.json({ error: { code: "NOT_FOUND", message: "Todo 不存在" } }, 404);
     }
@@ -524,39 +541,43 @@ export function createApi(options: ApiOptions = {}) {
   app.post("/api/todos/reorder", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
+    const userId = auth.user?.id ?? "default";
     const body = await readJson<{ memoId?: string; todoIds?: string[] }>(context);
     if (!body.memoId || !Array.isArray(body.todoIds)) {
       return context.json({ error: { code: "VALIDATION_FAILED", message: "排序数据无效" } }, 400);
     }
 
-    const todos = await repository.reorderTodos(body.memoId, body.todoIds, getNow(options));
+    const todos = await repository.reorderTodos(userId, body.memoId, body.todoIds, getNow(options));
     return context.json({ todos });
   });
 
   app.get("/api/history", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
-    const memos = await repository.listHistoryMemos();
+    const userId = auth.user?.id ?? "default";
+    const memos = await repository.listHistoryMemos(userId);
     return context.json({ memos });
   });
 
   app.get("/api/history/search", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
-    const memos = await repository.searchHistoryMemos(context.req.query("q") ?? "");
+    const userId = auth.user?.id ?? "default";
+    const memos = await repository.searchHistoryMemos(userId, context.req.query("q") ?? "");
     return context.json({ memos });
   });
 
   app.post("/api/history/bulk-delete", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
+    const userId = auth.user?.id ?? "default";
     const body = await readJson<{ memoIds?: string[] }>(context);
     if (!Array.isArray(body.memoIds) || body.memoIds.length === 0) {
       return context.json({ error: { code: "VALIDATION_FAILED", message: "请选择要删除的 Memo" } }, 400);
     }
 
     const now = getNow(options);
-    const deleted = await repository.softDeleteHistoryMemos(body.memoIds, now);
+    const deleted = await repository.softDeleteHistoryMemos(userId, body.memoIds, now);
     const operation = {
       id: `undo-${crypto.randomUUID()}`,
       type: "history_bulk_delete",
@@ -570,13 +591,14 @@ export function createApi(options: ApiOptions = {}) {
   app.post("/api/history/undo-delete", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
+    const userId = auth.user?.id ?? "default";
     const body = await readJson<{ operationId?: string }>(context);
     const operation = body.operationId ? undoOperations.get(body.operationId) : undefined;
     if (!operation) {
       return context.json({ error: { code: "NOT_FOUND", message: "撤销操作不存在" } }, 404);
     }
 
-    const restored = await repository.restoreDeletedMemos(operation.memoIds, getNow(options));
+    const restored = await repository.restoreDeletedMemos(userId, operation.memoIds, getNow(options));
     undoOperations.delete(body.operationId ?? "");
     return context.json({ restored });
   });
@@ -584,8 +606,9 @@ export function createApi(options: ApiOptions = {}) {
   app.get("/api/export/json", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
-    const memos = await repository.listExportableMemos();
-    const settings = await repository.getAiSettings(getNow(options));
+    const userId = auth.user?.id ?? "default";
+    const memos = await repository.listExportableMemos(userId);
+    const settings = await repository.getAiSettings(userId, getNow(options));
     return context.json({
       exportedAt: getNow(options),
       version: 1,
@@ -601,13 +624,15 @@ export function createApi(options: ApiOptions = {}) {
   app.get("/api/ai/settings", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
-    const settings = await repository.getAiSettings(getNow(options));
+    const userId = auth.user?.id ?? "default";
+    const settings = await repository.getAiSettings(userId, getNow(options));
     return context.json({ settings: publicAiSettings(settings) });
   });
 
   app.put("/api/ai/settings", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
+    const userId = auth.user?.id ?? "default";
     const body = await readJson<{ baseUrl?: string; model?: string; apiKey?: string; promptTemplate?: string }>(context);
     const trimmedApiKey = body.apiKey?.trim();
     let encryptedApiKey: string | undefined;
@@ -624,6 +649,7 @@ export function createApi(options: ApiOptions = {}) {
     }
 
     const settings = await repository.saveAiSettings(
+      userId,
       {
         baseUrl: body.baseUrl ?? "",
         model: body.model || DEFAULT_AI_MODEL,
@@ -639,14 +665,16 @@ export function createApi(options: ApiOptions = {}) {
   app.post("/api/ai/reset-prompt", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
-    const settings = await repository.resetAiPrompt(DEFAULT_PROMPT, getNow(options));
+    const userId = auth.user?.id ?? "default";
+    const settings = await repository.resetAiPrompt(userId, DEFAULT_PROMPT, getNow(options));
     return context.json({ settings: publicAiSettings(settings) });
   });
 
   app.post("/api/ai/test", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
-    const settings = await repository.getAiSettings(getNow(options));
+    const userId = auth.user?.id ?? "default";
+    const settings = await repository.getAiSettings(userId, getNow(options));
     if (!settings.baseUrl || !settings.encryptedApiKey) {
       return context.json({ error: { code: "AI_UNAVAILABLE", message: "请先在 Settings 配置 AI API" } }, 400);
     }
@@ -675,13 +703,14 @@ export function createApi(options: ApiOptions = {}) {
   app.post("/api/ai/analyze-draft", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
+    const userId = auth.user?.id ?? "default";
     const body = await readJson<{ draftId?: string }>(context);
-    const settings = await repository.getAiSettings(getNow(options));
+    const settings = await repository.getAiSettings(userId, getNow(options));
     if (!settings.baseUrl || !settings.encryptedApiKey) {
       return context.json({ error: { code: "AI_UNAVAILABLE", message: "请先在 Settings 配置 AI API" } }, 400);
     }
 
-    const draft = body.draftId ? await repository.findMemo(body.draftId) : null;
+    const draft = body.draftId ? await repository.findMemo(userId, body.draftId) : null;
     if (!draft || draft.status !== "draft") {
       return context.json({ error: { code: "NOT_FOUND", message: "草稿不存在" } }, 404);
     }
@@ -721,7 +750,8 @@ export function createApi(options: ApiOptions = {}) {
   app.get("/api/sync/status", async (context) => {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
-    const status = await repository.getSyncStatus(getNow(options));
+    const userId = auth.user?.id ?? "default";
+    const status = await repository.getSyncStatus(userId, getNow(options));
     return context.json({ status });
   });
 

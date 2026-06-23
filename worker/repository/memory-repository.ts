@@ -17,12 +17,13 @@ function cloneMemo(memo: Memo): Memo {
 
 export class MemoryRepository implements MemoRepository {
   private memos: Memo[] = [];
-  private aiSettings: AiSettings | null = null;
+  private aiSettings = new Map<string, AiSettings>();
+  private syncStatus = new Map<string, SyncStatus>();
 
-  async createDraft(input: DraftInput, now: string): Promise<Memo> {
+  async createDraft(userId: string, input: DraftInput, now: string): Promise<Memo> {
     const draft: Memo = {
       id: createId("memo"),
-      userId: "default",
+      userId,
       title: input.title?.trim() || "未命名 Memo",
       content: input.content,
       status: "draft",
@@ -41,12 +42,12 @@ export class MemoryRepository implements MemoRepository {
     };
 
     this.memos.push(draft);
-    this.trimDrafts(3);
+    this.trimDrafts(userId, 3);
     return cloneMemo(draft);
   }
 
-  async updateDraft(draftId: string, input: DraftInput, now: string): Promise<Memo | null> {
-    const draft = this.memos.find((memo) => memo.id === draftId && memo.status === "draft" && memo.deletedAt === null);
+  async updateDraft(userId: string, draftId: string, input: DraftInput, now: string): Promise<Memo | null> {
+    const draft = this.memos.find((memo) => memo.userId === userId && memo.id === draftId && memo.status === "draft" && memo.deletedAt === null);
     if (!draft) {
       return null;
     }
@@ -54,21 +55,21 @@ export class MemoryRepository implements MemoRepository {
     draft.title = input.title?.trim() || "未命名 Memo";
     draft.content = input.content;
     draft.updatedAt = now;
-    this.trimDrafts(3);
+    this.trimDrafts(userId, 3);
     return cloneMemo(draft);
   }
 
-  async listRecentDrafts(limit: number): Promise<Memo[]> {
+  async listRecentDrafts(userId: string, limit: number): Promise<Memo[]> {
     return this.memos
-      .filter((memo) => memo.status === "draft" && memo.deletedAt === null)
+      .filter((memo) => memo.userId === userId && memo.status === "draft" && memo.deletedAt === null)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id))
       .slice(0, limit)
       .map(cloneMemo);
   }
 
-  async publishMemo(input: PublishMemoInput, now: string): Promise<Memo> {
-    const memo = input.draftId ? this.memos.find((candidate) => candidate.id === input.draftId) : undefined;
-    const nextSortOrder = this.nextFrontSortOrder();
+  async publishMemo(userId: string, input: PublishMemoInput, now: string): Promise<Memo> {
+    const memo = input.draftId ? this.memos.find((candidate) => candidate.userId === userId && candidate.id === input.draftId) : undefined;
+    const nextSortOrder = this.nextFrontSortOrder(userId);
     const todos = input.todos.map((todo, index): MemoTodo => {
       const memoId = memo?.id ?? "pending";
       return {
@@ -101,7 +102,7 @@ export class MemoryRepository implements MemoRepository {
 
     const published: Memo = {
       id: createId("memo"),
-      userId: "default",
+      userId,
       title: input.title.trim(),
       content: input.content,
       status: "active",
@@ -123,28 +124,28 @@ export class MemoryRepository implements MemoRepository {
     return cloneMemo(published);
   }
 
-  async listActiveMemos(): Promise<Memo[]> {
+  async listActiveMemos(userId: string): Promise<Memo[]> {
     return this.memos
-      .filter((memo) => memo.status === "active" && memo.deletedAt === null)
+      .filter((memo) => memo.userId === userId && memo.status === "active" && memo.deletedAt === null)
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map(cloneMemo);
   }
 
-  async listHistoryMemos(): Promise<Memo[]> {
+  async listHistoryMemos(userId: string): Promise<Memo[]> {
     return this.memos
-      .filter((memo) => memo.status === "history" && memo.deletedAt === null)
+      .filter((memo) => memo.userId === userId && memo.status === "history" && memo.deletedAt === null)
       .sort((a, b) => (b.historyAt ?? "").localeCompare(a.historyAt ?? ""))
       .map(cloneMemo);
   }
 
-  async searchHistoryMemos(query: string): Promise<Memo[]> {
+  async searchHistoryMemos(userId: string, query: string): Promise<Memo[]> {
     const normalized = query.trim().toLowerCase();
     if (!normalized) {
-      return this.listHistoryMemos();
+      return this.listHistoryMemos(userId);
     }
 
     return this.memos
-      .filter((memo) => memo.status === "history" && memo.deletedAt === null)
+      .filter((memo) => memo.userId === userId && memo.status === "history" && memo.deletedAt === null)
       .filter((memo) => {
         const fields = [
           memo.title,
@@ -157,13 +158,16 @@ export class MemoryRepository implements MemoRepository {
       .map(cloneMemo);
   }
 
-  async findTodo(todoId: string): Promise<MemoTodo | null> {
-    const todo = this.memos.flatMap((memo) => memo.todos).find((candidate) => candidate.id === todoId);
+  async findTodo(userId: string, todoId: string): Promise<MemoTodo | null> {
+    const todo = this.memos.filter((memo) => memo.userId === userId).flatMap((memo) => memo.todos).find((candidate) => candidate.id === todoId);
     return todo ? { ...todo } : null;
   }
 
-  async updateTodo(todo: MemoTodo): Promise<MemoTodo> {
+  async updateTodo(userId: string, todo: MemoTodo): Promise<MemoTodo> {
     for (const memo of this.memos) {
+      if (memo.userId !== userId) {
+        continue;
+      }
       const index = memo.todos.findIndex((candidate) => candidate.id === todo.id);
       if (index >= 0) {
         memo.todos[index] = { ...todo };
@@ -176,11 +180,12 @@ export class MemoryRepository implements MemoRepository {
   }
 
   async createTodo(
+    userId: string,
     memoId: string,
     input: { title: string; notes?: string | null; generatedByAi?: boolean },
     now: string
   ): Promise<MemoTodo> {
-    const memo = this.memos.find((candidate) => candidate.id === memoId && candidate.deletedAt === null);
+    const memo = this.memos.find((candidate) => candidate.userId === userId && candidate.id === memoId && candidate.deletedAt === null);
     if (!memo) {
       throw new Error("Memo not found");
     }
@@ -205,15 +210,15 @@ export class MemoryRepository implements MemoRepository {
     return { ...todo };
   }
 
-  async deleteTodo(todoId: string, now: string): Promise<MemoTodo | null> {
-    const todo = this.memos.flatMap((memo) => memo.todos).find((candidate) => candidate.id === todoId);
+  async deleteTodo(userId: string, todoId: string, now: string): Promise<MemoTodo | null> {
+    const todo = this.memos.filter((memo) => memo.userId === userId).flatMap((memo) => memo.todos).find((candidate) => candidate.id === todoId);
     if (!todo || todo.deletedAt !== null) {
       return null;
     }
 
     todo.deletedAt = now;
     todo.updatedAt = now;
-    const memo = this.memos.find((candidate) => candidate.id === todo.memoId);
+    const memo = this.memos.find((candidate) => candidate.userId === userId && candidate.id === todo.memoId);
     if (memo) {
       memo.updatedAt = now;
       memo.autoArchiveSuppressedUntilChange = false;
@@ -221,8 +226,8 @@ export class MemoryRepository implements MemoRepository {
     return { ...todo };
   }
 
-  async reorderTodos(memoId: string, todoIds: string[], now: string): Promise<MemoTodo[]> {
-    const memo = this.memos.find((candidate) => candidate.id === memoId && candidate.deletedAt === null);
+  async reorderTodos(userId: string, memoId: string, todoIds: string[], now: string): Promise<MemoTodo[]> {
+    const memo = this.memos.find((candidate) => candidate.userId === userId && candidate.id === memoId && candidate.deletedAt === null);
     if (!memo) {
       return [];
     }
@@ -242,39 +247,40 @@ export class MemoryRepository implements MemoRepository {
       .map((todo) => ({ ...todo }));
   }
 
-  async findMemo(memoId: string): Promise<Memo | null> {
-    const memo = this.memos.find((candidate) => candidate.id === memoId);
+  async findMemo(userId: string, memoId: string): Promise<Memo | null> {
+    const memo = this.memos.find((candidate) => candidate.userId === userId && candidate.id === memoId);
     return memo ? cloneMemo(memo) : null;
   }
 
-  async saveMemo(memo: Memo): Promise<Memo> {
+  async saveMemo(userId: string, memo: Memo): Promise<Memo> {
+    const scopedMemo = { ...memo, userId };
     const index = this.memos.findIndex((candidate) => candidate.id === memo.id);
     if (index < 0) {
-      this.memos.push(cloneMemo(memo));
+      this.memos.push(cloneMemo(scopedMemo));
     } else {
-      this.memos[index] = cloneMemo(memo);
+      this.memos[index] = cloneMemo(scopedMemo);
     }
-    return cloneMemo(memo);
+    return cloneMemo(scopedMemo);
   }
 
-  async reorderMemos(memoIds: string[], now: string): Promise<Memo[]> {
+  async reorderMemos(userId: string, memoIds: string[], now: string): Promise<Memo[]> {
     const orderById = new Map(memoIds.map((id, index) => [id, index + 1]));
     for (const memo of this.memos) {
       const order = orderById.get(memo.id);
-      if (order !== undefined && memo.status === "active" && memo.deletedAt === null) {
+      if (order !== undefined && memo.userId === userId && memo.status === "active" && memo.deletedAt === null) {
         memo.sortOrder = order;
         memo.updatedAt = now;
       }
     }
 
-    return this.listActiveMemos();
+    return this.listActiveMemos(userId);
   }
 
-  async softDeleteHistoryMemos(memoIds: string[], now: string): Promise<Memo[]> {
+  async softDeleteHistoryMemos(userId: string, memoIds: string[], now: string): Promise<Memo[]> {
     const ids = new Set(memoIds);
     const deleted: Memo[] = [];
     for (const memo of this.memos) {
-      if (ids.has(memo.id) && memo.status === "history" && memo.deletedAt === null) {
+      if (ids.has(memo.id) && memo.userId === userId && memo.status === "history" && memo.deletedAt === null) {
         memo.status = "deleted";
         memo.deletedAt = now;
         memo.updatedAt = now;
@@ -285,11 +291,11 @@ export class MemoryRepository implements MemoRepository {
     return deleted;
   }
 
-  async restoreDeletedMemos(memoIds: string[], now: string): Promise<Memo[]> {
+  async restoreDeletedMemos(userId: string, memoIds: string[], now: string): Promise<Memo[]> {
     const ids = new Set(memoIds);
     const restored: Memo[] = [];
     for (const memo of this.memos) {
-      if (ids.has(memo.id) && memo.status === "deleted") {
+      if (ids.has(memo.id) && memo.userId === userId && memo.status === "deleted") {
         memo.status = "history";
         memo.deletedAt = null;
         memo.updatedAt = now;
@@ -300,9 +306,9 @@ export class MemoryRepository implements MemoRepository {
     return restored;
   }
 
-  async listExportableMemos(): Promise<Memo[]> {
+  async listExportableMemos(userId: string): Promise<Memo[]> {
     return this.memos
-      .filter((memo) => (memo.status === "active" || memo.status === "history") && memo.deletedAt === null)
+      .filter((memo) => memo.userId === userId && (memo.status === "active" || memo.status === "history") && memo.deletedAt === null)
       .sort((a, b) => {
         if (a.status !== b.status) {
           return a.status === "active" ? -1 : 1;
@@ -315,17 +321,17 @@ export class MemoryRepository implements MemoRepository {
       .map(cloneMemo);
   }
 
-  async getAiSettings(now: string): Promise<AiSettings> {
-    if (!this.aiSettings) {
-      this.aiSettings = createDefaultAiSettings(now);
+  async getAiSettings(userId: string, now: string): Promise<AiSettings> {
+    if (!this.aiSettings.has(userId)) {
+      this.aiSettings.set(userId, createDefaultAiSettings(userId, now));
     }
 
-    return { ...this.aiSettings };
+    return { ...this.aiSettings.get(userId)! };
   }
 
-  async saveAiSettings(input: AiSettingsInput, now: string): Promise<AiSettings> {
-    const existing = await this.getAiSettings(now);
-    this.aiSettings = {
+  async saveAiSettings(userId: string, input: AiSettingsInput, now: string): Promise<AiSettings> {
+    const existing = await this.getAiSettings(userId, now);
+    const settings = {
       ...existing,
       baseUrl: input.baseUrl.trim(),
       model: input.model.trim() || DEFAULT_AI_MODEL,
@@ -334,49 +340,53 @@ export class MemoryRepository implements MemoRepository {
       promptTemplate: input.promptTemplate,
       updatedAt: now
     };
-    return { ...this.aiSettings };
+    this.aiSettings.set(userId, settings);
+    return { ...settings };
   }
 
-  async resetAiPrompt(promptTemplate: string, now: string): Promise<AiSettings> {
-    const existing = await this.getAiSettings(now);
-    this.aiSettings = {
+  async resetAiPrompt(userId: string, promptTemplate: string, now: string): Promise<AiSettings> {
+    const existing = await this.getAiSettings(userId, now);
+    const settings = {
       ...existing,
       promptTemplate,
       updatedAt: now
     };
-    return { ...this.aiSettings };
+    this.aiSettings.set(userId, settings);
+    return { ...settings };
   }
 
-  async getSyncStatus(now: string): Promise<SyncStatus> {
-    return {
+  async getSyncStatus(userId: string, now: string): Promise<SyncStatus> {
+    const status = this.syncStatus.get(userId) ?? {
       ok: true,
       lastSuccessAt: now,
       lastError: null,
       updatedAt: now
     };
+    this.syncStatus.set(userId, status);
+    return { ...status };
   }
 
-  private nextFrontSortOrder(): number {
-    const activeOrders = this.memos.filter((memo) => memo.status === "active").map((memo) => memo.sortOrder);
+  private nextFrontSortOrder(userId: string): number {
+    const activeOrders = this.memos.filter((memo) => memo.userId === userId && memo.status === "active").map((memo) => memo.sortOrder);
     return activeOrders.length === 0 ? 1000 : Math.min(...activeOrders) - 1;
   }
 
-  private trimDrafts(limit: number): void {
+  private trimDrafts(userId: string, limit: number): void {
     const drafts = this.memos
-      .filter((memo) => memo.status === "draft")
+      .filter((memo) => memo.userId === userId && memo.status === "draft")
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id));
     const keepIds = new Set(drafts.slice(0, limit).map((memo) => memo.id));
-    this.memos = this.memos.filter((memo) => memo.status !== "draft" || keepIds.has(memo.id));
+    this.memos = this.memos.filter((memo) => memo.userId !== userId || memo.status !== "draft" || keepIds.has(memo.id));
   }
 }
 
 export const DEFAULT_AI_BASE_URL = "https://api.deepseek.com";
 export const DEFAULT_AI_MODEL = "deepseek-v4-pro";
 
-function createDefaultAiSettings(now: string): AiSettings {
+function createDefaultAiSettings(userId: string, now: string): AiSettings {
   return {
-    id: "default",
-    userId: "default",
+    id: userId,
+    userId,
     baseUrl: DEFAULT_AI_BASE_URL,
     model: DEFAULT_AI_MODEL,
     encryptedApiKey: null,
