@@ -1,9 +1,9 @@
-# MemoTask V1 Development Context
+# MemoTask Development Context
 
 Created: 2026-06-22
 Updated: 2026-06-23
 
-This document records the implementation context for MemoTask V1. It is safe to keep in the repository and avoids private Cloudflare account identifiers, dashboard URLs, and full secrets.
+This document records the implementation context for MemoTask V1 and V2. It is safe to keep in the repository and avoids private Cloudflare account identifiers, dashboard URLs, and full secrets.
 
 ## Source Of Truth
 
@@ -35,6 +35,15 @@ V1 scope:
 5. Avoid dates, reminders, tags, payments, subscriptions, independent search pages, and a self-built login page in V1.
 6. Use DeepSeek/OpenAI-compatible AI settings with default base URL `https://api.deepseek.com` and model `deepseek-v4-pro`.
 
+V2 scope:
+
+1. Add public email/password registration and login.
+2. Require email verification before entering the Memo app.
+3. Add logout, forgot password, and reset password flows.
+4. Store sessions in HttpOnly cookies named `memotask_session`.
+5. Isolate Memo, draft, history, AI settings, sync status, and export data by authenticated user.
+6. Keep OAuth, teams, roles, admin dashboards, billing, public profiles, tags, reminders, and date/month map features out of V2.
+
 ## Technical Direction
 
 MemoTask uses:
@@ -43,7 +52,8 @@ MemoTask uses:
 - Hono inside Cloudflare Workers for API routes.
 - Cloudflare Workers Assets for static files.
 - Cloudflare D1 for persistence.
-- Cloudflare Access as an optional deployment-level protection layer.
+- Application-level V2 auth as the primary account boundary.
+- Cloudflare Access as an optional extra deployment-level protection layer.
 - Vitest and Playwright for verification.
 
 The app is intentionally deployed as a single Worker so frontend, API, and static assets move together.
@@ -70,6 +80,9 @@ Production secret:
 
 ```text
 APP_ENCRYPTION_KEY
+EMAIL_API_KEY
+EMAIL_FROM
+APP_BASE_URL
 ```
 
 Local-only secret files should remain ignored:
@@ -103,15 +116,15 @@ Worker name: memotask
 D1 database name: memotask-db
 D1 binding: DB
 Custom domain: memotask.rrwks.cn
-Worker secret: APP_ENCRYPTION_KEY
+Worker secrets or variables: APP_ENCRYPTION_KEY, EMAIL_API_KEY, EMAIL_FROM, APP_BASE_URL
 ```
 
-Cloudflare Access:
+Authentication:
 
 - Zero Trust Free has been used during setup.
 - An owner-only Access policy was tested earlier.
 - Current production custom domain is public for cross-device testing.
-- Before broad sharing, either re-enable Cloudflare Access or add application-level auth in V2.
+- V2 now provides application-level auth; Cloudflare Access can be re-enabled as an extra outer gate.
 
 ## Latest Verified Deployment
 
@@ -119,7 +132,7 @@ UI polish deployment:
 
 ```text
 Date: 2026-06-23
-Worker version ID: 2dd6e63e-27c9-4a09-94a3-64e7b9b31555
+Worker version ID: <masked-worker-version-id>
 Production JS bundle: /assets/index-C0wqRxWN.js
 Production CSS bundle: /assets/index-C_BKT7Az.css
 ```
@@ -164,6 +177,7 @@ Core Worker files:
 ```text
 worker/index.ts
 worker/api.ts
+worker/auth/
 worker/domain/state-machines.ts
 worker/repository/d1-repository.ts
 worker/repository/memory-repository.ts
@@ -174,9 +188,41 @@ Database migration:
 
 ```text
 migrations/0001_initial.sql
+migrations/0002_auth.sql
 ```
 
-The repository uses a `MemoryRepository` for tests and a `D1Repository` for production.
+The repository uses a `MemoryRepository` and `MemoryAuthRepository` for tests, and `D1Repository` plus `D1AuthRepository` for production.
+
+## Git Version Points
+
+V1 baseline:
+
+```text
+Branch: codex/memotask-v1
+Commit: a6eceb7 chore: establish v1 baseline
+```
+
+V2 auth branch:
+
+```text
+Branch: codex/v2-auth
+Key commits:
+7ac146b docs: add v2 auth design
+d7b8329 docs: add v2 auth implementation plan
+0802617 feat: add auth schema and services
+cd1e409 feat: protect api with user sessions
+a0717e8 feat: isolate memo data by user
+b4cb93b feat: add auth UI flows
+f54f757 feat: wire auth persistence and email delivery
+```
+
+Useful rollback commands:
+
+```bash
+git switch codex/memotask-v1
+git switch codex/v2-auth
+git log --oneline --decorate
+```
 
 ## Verification Commands
 
@@ -203,10 +249,9 @@ The final command should show the latest `/assets/index-*.js` and `/assets/index
 
 Before public use:
 
-1. Decide whether `memotask.rrwks.cn` remains public.
-2. Choose Cloudflare Access or application-level auth for V2.
-3. Decide whether preview URLs should remain public.
-4. Consider whether AI settings should become per-user after auth exists.
+1. Decide whether `memotask.rrwks.cn` remains public or gets an additional Cloudflare Access gate.
+2. Decide whether preview URLs should remain public.
+3. Decide whether existing V1 `user_id = 'default'` rows should be manually assigned to a first real owner account before opening public registration.
 
 ## GitHub Upload Checklist
 

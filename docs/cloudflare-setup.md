@@ -9,8 +9,9 @@ MemoTask uses one Cloudflare Worker for both the frontend and backend:
 - Workers Assets serves the Vite build from `dist/`.
 - The Worker runs first for `/api/*`.
 - Cloudflare D1 stores application data.
+- MemoTask V2 provides application-level accounts with email verification and password reset.
 - A custom domain points directly to the Worker.
-- Cloudflare Access is optional for V1 protection.
+- Cloudflare Access is optional as an extra outer protection layer.
 
 ## Billing Safety
 
@@ -58,7 +59,7 @@ API key storage: encrypted in D1 after being entered in app Settings
 Latest verified deployment after the UI polish pass:
 
 ```text
-Worker version ID: 2dd6e63e-27c9-4a09-94a3-64e7b9b31555
+Worker version ID: <masked-worker-version-id>
 Production bundle: /assets/index-C0wqRxWN.js
 Production CSS: /assets/index-C_BKT7Az.css
 Health check: https://memotask.rrwks.cn/api/health -> {"ok":true}
@@ -72,8 +73,11 @@ Create or verify these resources:
 2. Cloudflare D1 database named `memotask-db`.
 3. D1 binding named `DB`.
 4. Worker secret named `APP_ENCRYPTION_KEY`.
-5. Optional custom domain, such as `memotask.example.com`.
-6. Optional Cloudflare Access application if login protection is needed.
+5. Worker secret named `EMAIL_API_KEY`.
+6. Worker variable or secret named `EMAIL_FROM`.
+7. Worker variable or secret named `APP_BASE_URL`.
+8. Optional custom domain, such as `memotask.example.com`.
+9. Optional Cloudflare Access application if an extra Cloudflare-level gate is needed.
 
 ## Local Prerequisites
 
@@ -173,7 +177,7 @@ Apply the migration remotely:
 npm run db:migrate:remote
 ```
 
-The initial schema is [migrations/0001_initial.sql](../migrations/0001_initial.sql). It creates:
+The schema is split across [migrations/0001_initial.sql](../migrations/0001_initial.sql) and [migrations/0002_auth.sql](../migrations/0002_auth.sql). It creates:
 
 ```text
 memos
@@ -181,6 +185,10 @@ memo_todos
 ai_settings
 undo_operations
 sync_meta
+users
+sessions
+email_verification_tokens
+password_reset_tokens
 ```
 
 Useful verification command:
@@ -193,10 +201,14 @@ Expected application tables include:
 
 ```text
 ai_settings
+email_verification_tokens
 memo_todos
 memos
+password_reset_tokens
+sessions
 sync_meta
 undo_operations
+users
 ```
 
 ## Worker Secrets
@@ -211,10 +223,30 @@ Use a long random value. Do not commit it.
 
 This secret is used to encrypt API keys entered through the app Settings page before they are stored in D1.
 
+Set email delivery configuration before opening registration or password reset in production:
+
+```bash
+npx wrangler secret put EMAIL_API_KEY
+npx wrangler secret put EMAIL_FROM
+npx wrangler secret put APP_BASE_URL
+```
+
+V2 sends verification and password-reset emails through a Resend-compatible HTTP API. Use values like:
+
+```text
+EMAIL_FROM=MemoTask <noreply@example.com>
+APP_BASE_URL=https://memotask.example.com
+```
+
+If email configuration is missing, registration and password recovery fail clearly instead of pretending an email was sent.
+
 For local Worker development, use `.dev.vars` and keep it ignored by Git:
 
 ```text
 APP_ENCRYPTION_KEY=<local-random-secret>
+EMAIL_API_KEY=<local-email-provider-key>
+EMAIL_FROM=MemoTask <noreply@example.com>
+APP_BASE_URL=http://127.0.0.1:8787
 ```
 
 The repository includes [.env.example](../.env.example) with the required key name.
@@ -277,7 +309,7 @@ Uploaded memotask
 Deployed memotask triggers
   https://memotask.<account-subdomain>.workers.dev
   memotask.rrwks.cn (custom domain)
-Current Version ID: 2dd6e63e-27c9-4a09-94a3-64e7b9b31555
+Current Version ID: <masked-worker-version-id>
 ```
 
 ## Custom Domain Setup
@@ -326,21 +358,23 @@ curl -s https://memotask.rrwks.cn/memos
 
 Look for the current `/assets/index-*.js` and `/assets/index-*.css` files.
 
-## Cloudflare Access
+## Application Auth And Cloudflare Access
 
-Cloudflare Access is optional in V1.
+MemoTask V2 includes its own application-level account system. Users register with email/password, verify email, log in, log out, and reset passwords by email token. The Worker stores sessions in D1 and sets an HttpOnly `memotask_session` cookie.
+
+Cloudflare Access is still optional as an outer gate.
 
 Two workable modes:
 
-1. Public Worker URL and public custom domain for phone/browser testing.
-2. Cloudflare Access protected app for owner-only or team-only use.
+1. Public Worker URL and public custom domain, protected by MemoTask V2 auth.
+2. Cloudflare Access protected app plus MemoTask V2 auth for an additional Cloudflare login step.
 
 The current production custom domain is public for easier cross-device testing. An Access application and owner-only policy were configured earlier for the `workers.dev` URL, but enforcement was later disabled while testing mobile access.
 
-Recommended V1/V2 decision:
+Recommended V2 decision:
 
-- Keep public only while testing.
-- Before sharing widely, add application-level auth or re-enable Cloudflare Access.
+- Keep public only while testing if preview data is not sensitive.
+- Before sharing widely, confirm email delivery works and decide whether Cloudflare Access is also needed.
 - If using Access, configure a policy such as `Include -> Emails -> your-email@example.com`.
 
 Basic Access setup:
@@ -361,7 +395,7 @@ Unauthenticated request -> 302 redirect to <team-name>.cloudflareaccess.com
 Authenticated owner email -> MemoTask loads normally
 ```
 
-If phone browsers fail to open the app after Access is enabled, first check whether the phone browser can complete Cloudflare Access one-time PIN login. If the use case is personal mobile access, app-level auth may be smoother than Cloudflare Access for V2.
+If phone browsers fail to open the app after Access is enabled, first check whether the phone browser can complete Cloudflare Access one-time PIN login.
 
 ## Verification Checklist
 
@@ -446,6 +480,22 @@ Base URL: https://api.deepseek.com
 Model: deepseek-v4-pro
 ```
 
+### Registration or password reset email fails
+
+Confirm email settings are present:
+
+```bash
+npx wrangler secret put EMAIL_API_KEY
+npx wrangler secret put EMAIL_FROM
+npx wrangler secret put APP_BASE_URL
+```
+
+Then redeploy:
+
+```bash
+npm run worker:deploy
+```
+
 ### D1 binding missing at runtime
 
 Check:
@@ -471,10 +521,10 @@ Check:
 
 ### Cloudflare Access blocks mobile access
 
-For V1 testing, set the Worker/custom domain access mode to Public. For long-term use, decide between:
+For V2 testing, set the Worker/custom domain access mode to Public and rely on MemoTask login. For long-term use, decide between:
 
 - Cloudflare Access with email one-time PIN or identity provider login.
-- App-level authentication in MemoTask V2.
+- MemoTask app-level authentication only.
 
 ## Public Sharing Before GitHub Upload
 

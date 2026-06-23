@@ -2,7 +2,9 @@
 
 MemoTask is a Chinese-first, low-pressure Memo queue. It turns rough thoughts into ordered Memo cards, keeps only the next actionable Todo items in view, and archives completed work into searchable history.
 
-The app is built as a single Cloudflare Worker application: React/Vite serves the UI, Hono handles `/api/*`, and Cloudflare D1 stores Memo, Todo, history, undo, sync, and AI settings data.
+The current release is V2. It adds application-level account management with email registration, login, email verification, password reset, HttpOnly sessions, and per-user Memo data isolation.
+
+The app is built as a single Cloudflare Worker application: React/Vite serves the UI, Hono handles `/api/*`, and Cloudflare D1 stores accounts, sessions, Memo, Todo, history, undo, sync, and AI settings data.
 
 Production URL for this deployment:
 
@@ -12,7 +14,7 @@ https://memotask.rrwks.cn/memos
 
 ## Product Design
 
-MemoTask deliberately avoids calendar/task-manager complexity in V1. There are no dates, reminders, tags, subscriptions, or independent search pages. The core loop is:
+MemoTask deliberately avoids calendar/task-manager complexity. There are no dates, reminders, tags, subscriptions, or independent search pages. The core loop is:
 
 1. Write a raw Memo on the recording page.
 2. Optionally use AI to split it into Todo drafts.
@@ -24,6 +26,8 @@ The UI uses a Soft Clay / neumorphic visual system with Chinese labels throughou
 
 ## Main Features
 
+- Public email/password account registration, login, logout, email verification, and password reset.
+- HttpOnly session cookies and per-user separation for Memo, draft, history, AI settings, sync status, and JSON export data.
 - Capture page with auto-saved drafts and recent draft recovery.
 - AI analysis using a DeepSeek/OpenAI-compatible chat completions API.
 - Active Memo queue with drag sorting and up/down controls.
@@ -56,6 +60,7 @@ Important paths:
 ```text
 src/                     React app, pages, state, API client, styles
 worker/                  Hono API, domain logic, repository implementations
+worker/auth/             Account service, password/token crypto, auth persistence, email sender
 migrations/              Cloudflare D1 schema migrations
 tests/api/               Worker/API/repository tests
 tests/ui/                React UI tests
@@ -112,7 +117,7 @@ Run the Worker locally with Wrangler:
 npm run worker:dev
 ```
 
-Apply the D1 migration locally:
+Apply D1 migrations locally:
 
 ```bash
 npm run db:migrate:local
@@ -195,8 +200,11 @@ Required Cloudflare resources:
 - Cloudflare account with Workers enabled.
 - D1 database named `memotask-db`.
 - Worker secret `APP_ENCRYPTION_KEY`.
+- Worker secret `EMAIL_API_KEY`.
+- Worker variable or secret `EMAIL_FROM`.
+- Worker variable or secret `APP_BASE_URL`.
 - Optional custom domain, for example `memotask.example.com`.
-- Optional Cloudflare Access application if you want Cloudflare-level login protection.
+- Optional Cloudflare Access application if you want an extra Cloudflare-level login gate.
 
 Detailed setup steps are in [docs/cloudflare-setup.md](docs/cloudflare-setup.md).
 
@@ -204,10 +212,13 @@ Detailed setup steps are in [docs/cloudflare-setup.md](docs/cloudflare-setup.md)
 
 Do not commit real secrets.
 
-The Worker requires this secret in production:
+The Worker requires these production secrets or variables:
 
 ```bash
 npx wrangler secret put APP_ENCRYPTION_KEY
+npx wrangler secret put EMAIL_API_KEY
+npx wrangler secret put EMAIL_FROM
+npx wrangler secret put APP_BASE_URL
 ```
 
 MemoTask does not require an AI key in repo files. Configure AI from the app Settings page:
@@ -229,6 +240,14 @@ The Worker handles these API groups:
 
 ```text
 GET    /api/health
+POST   /api/auth/register
+POST   /api/auth/login
+POST   /api/auth/logout
+GET    /api/auth/me
+POST   /api/auth/verify-email
+POST   /api/auth/resend-verification
+POST   /api/auth/forgot-password
+POST   /api/auth/reset-password
 POST   /api/drafts
 GET    /api/drafts/recent
 PATCH  /api/drafts/:id
@@ -259,23 +278,35 @@ GET    /api/sync/status
 
 ## Database
 
-The D1 schema is defined in [migrations/0001_initial.sql](migrations/0001_initial.sql). It creates:
+The D1 schema is defined in [migrations/0001_initial.sql](migrations/0001_initial.sql) and [migrations/0002_auth.sql](migrations/0002_auth.sql). It creates:
 
 - `memos`
 - `memo_todos`
 - `ai_settings`
 - `undo_operations`
 - `sync_meta`
+- `users`
+- `sessions`
+- `email_verification_tokens`
+- `password_reset_tokens`
 
-Indexes support active queue sorting, history listing, and Todo ordering.
+Indexes support active queue sorting, history listing, Todo ordering, user lookup, session lookup, and token lookup.
 
 ## Security Notes
 
-- V1 currently relies on either public access or Cloudflare Access, depending on the Worker domain setting.
-- Before sharing a production URL widely, enable application-level auth or re-enable Cloudflare Access.
+- V2 uses application-level auth by default. Non-auth APIs require a verified session.
+- Cloudflare Access can still be enabled as an additional outer gate, but it is no longer the primary account system.
 - Preview URLs are useful for debugging but should be restricted before external sharing if the data matters.
 - AI API keys should only be entered through Settings or stored as Cloudflare/local secrets.
 - Never commit `.dev.vars`, `.env`, build artifacts, screenshots, or Playwright output.
+
+## Version Management
+
+- V1 rollback baseline: branch `codex/memotask-v1`, commit `a6eceb7 chore: establish v1 baseline`.
+- V2 feature branch: `codex/v2-auth`.
+- V2 auth commits are split into design, schema/service, API protection, user isolation, UI flows, production wiring, and release docs.
+- To inspect or recover V1 locally: `git switch codex/memotask-v1`.
+- To continue V2 work: `git switch codex/v2-auth`.
 
 ## Documentation
 
