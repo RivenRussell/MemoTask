@@ -1,10 +1,13 @@
 import { Hono } from "hono";
+import type { AuthService } from "./auth/service";
+import { AuthError, type PublicAuthUser } from "./auth/types";
 import { moveMemoToHistory, restoreMemoFromHistory, shouldAutoArchiveMemo, toggleTodoStatus } from "./domain/state-machines";
 import { DEFAULT_AI_MODEL, DEFAULT_PROMPT, MemoryRepository } from "./repository/memory-repository";
 import type { AiSettings, MemoRepository } from "./repository/types";
 
 interface ApiOptions {
   repository?: MemoRepository;
+  authService?: AuthService;
   now?: () => string;
   appEncryptionKey?: string;
   fetchAi?: (request: Request) => Promise<Response>;
@@ -18,6 +21,55 @@ function getNow(options?: ApiOptions): string {
 
 async function readJson<T>(context: { req: { json: () => Promise<T> } }): Promise<T> {
   return context.req.json();
+}
+
+async function currentUser(
+  context: { req: { header: (name: string) => string | undefined } },
+  options: ApiOptions
+): Promise<{ user: PublicAuthUser | null; response: Response | null }> {
+  if (!options.authService) {
+    return { user: null, response: null };
+  }
+
+  const user = await options.authService.resolveSession(context.req.header("cookie"), getNow(options));
+  if (!user) {
+    return {
+      user: null,
+      response: Response.json({ error: { code: "AUTH_REQUIRED", message: "请先登录" } }, { status: 401 })
+    };
+  }
+  if (!user.emailVerified) {
+    return {
+      user,
+      response: Response.json({ error: { code: "EMAIL_NOT_VERIFIED", message: "请先验证邮箱" } }, { status: 403 })
+    };
+  }
+
+  return { user, response: null };
+}
+
+function authErrorResponse(error: unknown): Response {
+  if (error instanceof AuthError) {
+    const statusByCode: Record<string, number> = {
+      EMAIL_ALREADY_REGISTERED: 409,
+      EMAIL_INVALID: 400,
+      PASSWORD_TOO_SHORT: 400,
+      INVALID_CREDENTIALS: 401,
+      EMAIL_NOT_VERIFIED: 403,
+      TOKEN_INVALID: 400
+    };
+    return Response.json(
+      { error: { code: error.code, message: error.message } },
+      { status: statusByCode[error.code] ?? 400 }
+    );
+  }
+  return Response.json({ error: { code: "AUTH_FAILED", message: "账号操作失败，请稍后重试" } }, { status: 500 });
+}
+
+function withSessionCookie(context: { json: (object: unknown, status?: number) => Response }, body: unknown, sessionCookie: string, status = 200): Response {
+  const response = context.json(body, status);
+  response.headers.append("set-cookie", sessionCookie);
+  return response;
 }
 
 function publicAiSettings(settings: AiSettings) {
@@ -151,7 +203,114 @@ export function createApi(options: ApiOptions = {}) {
 
   app.get("/api/health", (context) => context.json({ ok: true }));
 
+  app.post("/api/auth/register", async (context) => {
+    if (!options.authService) {
+      return context.json({ error: { code: "AUTH_UNAVAILABLE", message: "账号服务未启用" } }, 503);
+    }
+
+    try {
+      const body = await readJson<{ email?: string; password?: string }>(context);
+      const result = await options.authService.register({ email: body.email ?? "", password: body.password ?? "" }, getNow(options));
+      return withSessionCookie(context, { user: result.user }, result.sessionCookie, 201);
+    } catch (error) {
+      return authErrorResponse(error);
+    }
+  });
+
+  app.post("/api/auth/login", async (context) => {
+    if (!options.authService) {
+      return context.json({ error: { code: "AUTH_UNAVAILABLE", message: "账号服务未启用" } }, 503);
+    }
+
+    try {
+      const body = await readJson<{ email?: string; password?: string }>(context);
+      const result = await options.authService.login({ email: body.email ?? "", password: body.password ?? "" }, getNow(options));
+      return withSessionCookie(context, { user: result.user }, result.sessionCookie);
+    } catch (error) {
+      return authErrorResponse(error);
+    }
+  });
+
+  app.post("/api/auth/logout", async (context) => {
+    if (!options.authService) {
+      return context.json({ ok: true });
+    }
+
+    const result = await options.authService.logout(context.req.header("cookie"));
+    return withSessionCookie(context, { ok: true }, result.sessionCookie);
+  });
+
+  app.get("/api/auth/me", async (context) => {
+    if (!options.authService) {
+      return context.json({ error: { code: "AUTH_UNAVAILABLE", message: "账号服务未启用" } }, 503);
+    }
+
+    const user = await options.authService.resolveSession(context.req.header("cookie"), getNow(options));
+    if (!user) {
+      return context.json({ error: { code: "AUTH_REQUIRED", message: "请先登录" } }, 401);
+    }
+    return context.json({ user });
+  });
+
+  app.post("/api/auth/verify-email", async (context) => {
+    if (!options.authService) {
+      return context.json({ error: { code: "AUTH_UNAVAILABLE", message: "账号服务未启用" } }, 503);
+    }
+
+    try {
+      const body = await readJson<{ token?: string }>(context);
+      const result = await options.authService.verifyEmail(body.token ?? "", getNow(options));
+      return withSessionCookie(context, { user: result.user }, result.sessionCookie);
+    } catch (error) {
+      return authErrorResponse(error);
+    }
+  });
+
+  app.post("/api/auth/resend-verification", async (context) => {
+    if (!options.authService) {
+      return context.json({ error: { code: "AUTH_UNAVAILABLE", message: "账号服务未启用" } }, 503);
+    }
+
+    try {
+      const body = await readJson<{ email?: string }>(context);
+      const result = await options.authService.resendVerification(body.email ?? "", getNow(options));
+      return context.json(result);
+    } catch (error) {
+      return authErrorResponse(error);
+    }
+  });
+
+  app.post("/api/auth/forgot-password", async (context) => {
+    if (!options.authService) {
+      return context.json({ error: { code: "AUTH_UNAVAILABLE", message: "账号服务未启用" } }, 503);
+    }
+
+    try {
+      const body = await readJson<{ email?: string }>(context);
+      const result = await options.authService.forgotPassword(body.email ?? "", getNow(options));
+      return context.json(result);
+    } catch (error) {
+      return authErrorResponse(error);
+    }
+  });
+
+  app.post("/api/auth/reset-password", async (context) => {
+    if (!options.authService) {
+      return context.json({ error: { code: "AUTH_UNAVAILABLE", message: "账号服务未启用" } }, 503);
+    }
+
+    try {
+      const body = await readJson<{ token?: string; password?: string }>(context);
+      const result = await options.authService.resetPassword({ token: body.token ?? "", password: body.password ?? "" }, getNow(options));
+      return withSessionCookie(context, { user: result.user }, result.sessionCookie);
+    } catch (error) {
+      return authErrorResponse(error);
+    }
+  });
+
   app.post("/api/drafts", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const body = await readJson<{ title?: string; content?: string }>(context);
     if (!body.content?.trim()) {
       return context.json({ error: { code: "VALIDATION_FAILED", message: "请输入 Memo 内容" } }, 400);
@@ -162,11 +321,15 @@ export function createApi(options: ApiOptions = {}) {
   });
 
   app.get("/api/drafts/recent", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const drafts = await repository.listRecentDrafts(3);
     return context.json({ drafts });
   });
 
   app.patch("/api/drafts/:id", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const body = await readJson<{ title?: string; content?: string }>(context);
     if (!body.content?.trim()) {
       return context.json({ error: { code: "VALIDATION_FAILED", message: "请输入 Memo 内容" } }, 400);
@@ -181,6 +344,8 @@ export function createApi(options: ApiOptions = {}) {
   });
 
   app.post("/api/memos/publish", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const body = await readJson<{
       title?: string;
       content?: string;
@@ -211,11 +376,15 @@ export function createApi(options: ApiOptions = {}) {
   });
 
   app.get("/api/memos", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const memos = await repository.listActiveMemos();
     return context.json({ memos });
   });
 
   app.get("/api/memos/:id", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const memo = await repository.findMemo(context.req.param("id"));
     if (!memo || memo.deletedAt !== null) {
       return context.json({ error: { code: "NOT_FOUND", message: "Memo 不存在" } }, 404);
@@ -225,6 +394,8 @@ export function createApi(options: ApiOptions = {}) {
   });
 
   app.patch("/api/memos/:id", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const memo = await repository.findMemo(context.req.param("id"));
     if (!memo || memo.deletedAt !== null) {
       return context.json({ error: { code: "NOT_FOUND", message: "Memo 不存在" } }, 404);
@@ -241,6 +412,8 @@ export function createApi(options: ApiOptions = {}) {
   });
 
   app.post("/api/memos/:id/archive", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const memo = await repository.findMemo(context.req.param("id"));
     if (!memo || memo.status !== "active" || memo.deletedAt !== null) {
       return context.json({ error: { code: "NOT_FOUND", message: "Memo 不存在" } }, 404);
@@ -251,6 +424,8 @@ export function createApi(options: ApiOptions = {}) {
   });
 
   app.post("/api/memos/:id/restore", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const memo = await repository.findMemo(context.req.param("id"));
     if (!memo || memo.status !== "history" || memo.deletedAt !== null) {
       return context.json({ error: { code: "NOT_FOUND", message: "Memo 不存在" } }, 404);
@@ -261,6 +436,8 @@ export function createApi(options: ApiOptions = {}) {
   });
 
   app.post("/api/memos/reorder", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const body = await readJson<{ memoIds?: string[] }>(context);
     if (!Array.isArray(body.memoIds)) {
       return context.json({ error: { code: "VALIDATION_FAILED", message: "排序数据无效" } }, 400);
@@ -271,6 +448,8 @@ export function createApi(options: ApiOptions = {}) {
   });
 
   app.post("/api/todos/:id/toggle", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const todo = await repository.findTodo(context.req.param("id"));
     if (!todo) {
       return context.json({ error: { code: "NOT_FOUND", message: "Todo 不存在" } }, 404);
@@ -293,6 +472,8 @@ export function createApi(options: ApiOptions = {}) {
   });
 
   app.post("/api/memos/:memoId/todos", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const memo = await repository.findMemo(context.req.param("memoId"));
     if (!memo || memo.deletedAt !== null) {
       return context.json({ error: { code: "NOT_FOUND", message: "Memo 不存在" } }, 404);
@@ -312,6 +493,8 @@ export function createApi(options: ApiOptions = {}) {
   });
 
   app.patch("/api/todos/:id", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const todo = await repository.findTodo(context.req.param("id"));
     if (!todo) {
       return context.json({ error: { code: "NOT_FOUND", message: "Todo 不存在" } }, 404);
@@ -328,6 +511,8 @@ export function createApi(options: ApiOptions = {}) {
   });
 
   app.delete("/api/todos/:id", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const deleted = await repository.deleteTodo(context.req.param("id"), getNow(options));
     if (!deleted) {
       return context.json({ error: { code: "NOT_FOUND", message: "Todo 不存在" } }, 404);
@@ -337,6 +522,8 @@ export function createApi(options: ApiOptions = {}) {
   });
 
   app.post("/api/todos/reorder", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const body = await readJson<{ memoId?: string; todoIds?: string[] }>(context);
     if (!body.memoId || !Array.isArray(body.todoIds)) {
       return context.json({ error: { code: "VALIDATION_FAILED", message: "排序数据无效" } }, 400);
@@ -347,16 +534,22 @@ export function createApi(options: ApiOptions = {}) {
   });
 
   app.get("/api/history", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const memos = await repository.listHistoryMemos();
     return context.json({ memos });
   });
 
   app.get("/api/history/search", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const memos = await repository.searchHistoryMemos(context.req.query("q") ?? "");
     return context.json({ memos });
   });
 
   app.post("/api/history/bulk-delete", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const body = await readJson<{ memoIds?: string[] }>(context);
     if (!Array.isArray(body.memoIds) || body.memoIds.length === 0) {
       return context.json({ error: { code: "VALIDATION_FAILED", message: "请选择要删除的 Memo" } }, 400);
@@ -375,6 +568,8 @@ export function createApi(options: ApiOptions = {}) {
   });
 
   app.post("/api/history/undo-delete", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const body = await readJson<{ operationId?: string }>(context);
     const operation = body.operationId ? undoOperations.get(body.operationId) : undefined;
     if (!operation) {
@@ -387,6 +582,8 @@ export function createApi(options: ApiOptions = {}) {
   });
 
   app.get("/api/export/json", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const memos = await repository.listExportableMemos();
     const settings = await repository.getAiSettings(getNow(options));
     return context.json({
@@ -402,11 +599,15 @@ export function createApi(options: ApiOptions = {}) {
   });
 
   app.get("/api/ai/settings", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const settings = await repository.getAiSettings(getNow(options));
     return context.json({ settings: publicAiSettings(settings) });
   });
 
   app.put("/api/ai/settings", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const body = await readJson<{ baseUrl?: string; model?: string; apiKey?: string; promptTemplate?: string }>(context);
     const trimmedApiKey = body.apiKey?.trim();
     let encryptedApiKey: string | undefined;
@@ -436,11 +637,15 @@ export function createApi(options: ApiOptions = {}) {
   });
 
   app.post("/api/ai/reset-prompt", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const settings = await repository.resetAiPrompt(DEFAULT_PROMPT, getNow(options));
     return context.json({ settings: publicAiSettings(settings) });
   });
 
   app.post("/api/ai/test", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const settings = await repository.getAiSettings(getNow(options));
     if (!settings.baseUrl || !settings.encryptedApiKey) {
       return context.json({ error: { code: "AI_UNAVAILABLE", message: "请先在 Settings 配置 AI API" } }, 400);
@@ -468,6 +673,8 @@ export function createApi(options: ApiOptions = {}) {
   });
 
   app.post("/api/ai/analyze-draft", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const body = await readJson<{ draftId?: string }>(context);
     const settings = await repository.getAiSettings(getNow(options));
     if (!settings.baseUrl || !settings.encryptedApiKey) {
@@ -512,6 +719,8 @@ export function createApi(options: ApiOptions = {}) {
   });
 
   app.get("/api/sync/status", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
     const status = await repository.getSyncStatus(getNow(options));
     return context.json({ status });
   });

@@ -43,7 +43,7 @@ interface AuthResult {
 export class AuthService {
   constructor(private readonly options: AuthServiceOptions) {}
 
-  async register(input: RegisterInput, now: string): Promise<{ user: PublicAuthUser }> {
+  async register(input: RegisterInput, now: string): Promise<AuthResult> {
     const email = normalizeEmail(input.email);
     assertValidPassword(input.password);
     const existing = await this.options.repository.findUserByEmail(email);
@@ -60,7 +60,7 @@ export class AuthService {
       updatedAt: now
     });
     await this.sendVerificationEmail(user, now);
-    return { user: publicUser(user) };
+    return this.createSessionResult(user, now);
   }
 
   async login(input: LoginInput, now: string): Promise<AuthResult> {

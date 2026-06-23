@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { createApi } from "../../worker/api";
 import { AuthService } from "../../worker/auth/service";
 import { MemoryAuthRepository } from "../../worker/auth/memory-auth-repository";
 import type { EmailMessage, EmailSender } from "../../worker/auth/types";
+import { MemoryRepository } from "../../worker/repository/memory-repository";
 
 const now = "2026-06-23T12:00:00.000Z";
 
@@ -119,5 +121,110 @@ describe("AuthService", () => {
 
     await expect(service.forgotPassword("nobody@example.com", now)).resolves.toEqual({ ok: true });
     expect(emailSender.messages).toEqual([]);
+  });
+});
+
+function createProtectedApi() {
+  const repository = new MemoryRepository();
+  const authRepository = new MemoryAuthRepository();
+  const emailSender = new RecordingEmailSender();
+  const authService = new AuthService({
+    repository: authRepository,
+    emailSender,
+    appBaseUrl: "https://memotask.example.com"
+  });
+  const app = createApi({
+    repository,
+    authService,
+    now: () => now
+  });
+  return { app, authService, emailSender };
+}
+
+async function json(response: Response) {
+  return response.json() as Promise<any>;
+}
+
+async function verifiedSessionCookie(authService: AuthService, emailSender: RecordingEmailSender): Promise<string> {
+  await authService.register({ email: "owner@example.com", password: "correct horse battery staple" }, now);
+  const verified = await authService.verifyEmail(tokenFromLatestEmail(emailSender), now);
+  return verified.sessionCookie;
+}
+
+describe("auth API protection", () => {
+  it("returns the current user from /api/auth/me when a session cookie is valid", async () => {
+    const { app, authService, emailSender } = createProtectedApi();
+    const sessionCookie = await verifiedSessionCookie(authService, emailSender);
+
+    const response = await app.request("/api/auth/me", { headers: { cookie: sessionCookie } });
+    const body = await json(response);
+
+    expect(response.status).toBe(200);
+    expect(body.user).toMatchObject({ email: "owner@example.com", emailVerified: true });
+  });
+
+  it("sets and clears HttpOnly session cookies through auth API routes", async () => {
+    const { app, emailSender } = createProtectedApi();
+    const register = await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "owner@example.com", password: "correct horse battery staple" })
+    });
+    expect(register.status).toBe(201);
+    const unverifiedCookie = register.headers.get("set-cookie") ?? "";
+    expect(unverifiedCookie).toContain("memotask_session=");
+
+    const protectedBeforeVerification = await app.request("/api/memos", { headers: { cookie: unverifiedCookie } });
+    expect(protectedBeforeVerification.status).toBe(403);
+
+    const verify = await app.request("/api/auth/verify-email", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: tokenFromLatestEmail(emailSender) })
+    });
+    expect(verify.status).toBe(200);
+    const sessionCookie = verify.headers.get("set-cookie") ?? "";
+    expect(sessionCookie).toContain("memotask_session=");
+    expect(sessionCookie).toContain("HttpOnly");
+
+    const logout = await app.request("/api/auth/logout", {
+      method: "POST",
+      headers: { cookie: sessionCookie }
+    });
+    expect(logout.status).toBe(200);
+    expect(logout.headers.get("set-cookie")).toContain("Max-Age=0");
+  });
+
+  it("rejects protected memo APIs without a verified session", async () => {
+    const { app, authService } = createProtectedApi();
+
+    const anonymous = await app.request("/api/memos");
+    expect(anonymous.status).toBe(401);
+
+    const registered = await authService.register({ email: "owner@example.com", password: "correct horse battery staple" }, now);
+    const unverifiedResponse = await app.request("/api/memos", { headers: { cookie: registered.sessionCookie } });
+    expect(unverifiedResponse.status).toBe(403);
+
+    await expect(authService.login({ email: "owner@example.com", password: "correct horse battery staple" }, now)).rejects.toMatchObject({
+      code: "EMAIL_NOT_VERIFIED"
+    });
+  });
+
+  it("allows verified sessions to use existing memo APIs", async () => {
+    const { app, authService, emailSender } = createProtectedApi();
+    const sessionCookie = await verifiedSessionCookie(authService, emailSender);
+
+    const publish = await app.request("/api/memos/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: sessionCookie },
+      body: JSON.stringify({ title: "v2 Memo", content: "需要登录", todos: [{ title: "验证保护层" }] })
+    });
+    expect(publish.status).toBe(201);
+
+    const list = await app.request("/api/memos", { headers: { cookie: sessionCookie } });
+    const body = await json(list);
+
+    expect(list.status).toBe(200);
+    expect(body.memos.map((memo: { title: string }) => memo.title)).toEqual(["v2 Memo"]);
   });
 });
