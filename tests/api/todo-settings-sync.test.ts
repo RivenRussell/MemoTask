@@ -73,7 +73,7 @@ describe("todo editing, AI test, and sync APIs", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         baseUrl: "https://api.example.com/v1",
-        apiKey: "sk-test-1234567890abcdef",
+        apiKey: "test-key-1234567890abcdef",
         model: "dsv4-pro",
         promptTemplate: "整理 Memo"
       })

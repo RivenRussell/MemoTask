@@ -1,4 +1,6 @@
-import { ArrowDown, ArrowUp, FileText, Pencil } from "lucide-react";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { ArrowDown, ArrowUp, FileText, GripVertical, Pencil } from "lucide-react";
 import type { Memo } from "../types";
 
 export function MemoCard({
@@ -16,15 +18,23 @@ export function MemoCard({
   onOpen: (memoId: string) => void;
   onToggleTodo: (todoId: string) => void;
 }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: memo.id });
+  const visibleTodos = memo.todos.slice(0, 3);
+  const remainingTodoCount = Math.max(0, memo.todos.length - visibleTodos.length);
+
   return (
-    <article className="soft-card memo-card">
+    <article
+      className={`soft-card memo-card${isDragging ? " is-dragging" : ""}`}
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+    >
       <div className="card-heading">
         <FileText size={20} />
         <h2>{memo.title}</h2>
       </div>
       <p className="memo-content">{memo.content}</p>
       <ul className="todo-list">
-        {memo.todos.slice(0, 3).map((todo) => (
+        {visibleTodos.map((todo) => (
           <li
             key={todo.id}
             className={todo.status === "done" ? "is-done" : undefined}
@@ -40,8 +50,19 @@ export function MemoCard({
             <span>{todo.title}</span>
           </li>
         ))}
+        {remainingTodoCount > 0 ? <li className="todo-remaining">还有 {remainingTodoCount} 个 Todo</li> : null}
       </ul>
       <div className="card-actions">
+        <button
+          aria-label={`拖动排序 ${memo.title}`}
+          className="secondary-action icon-only-action drag-handle"
+          title="拖动排序"
+          type="button"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical size={16} />
+        </button>
         <button
           aria-label={`上移 ${memo.title}`}
           className="secondary-action icon-only-action"

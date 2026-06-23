@@ -45,6 +45,7 @@ export interface SyncStatus {
 
 export interface MemoRepository {
   createDraft(input: DraftInput, now: string): Promise<Memo>;
+  updateDraft(draftId: string, input: DraftInput, now: string): Promise<Memo | null>;
   listRecentDrafts(limit: number): Promise<Memo[]>;
   publishMemo(input: PublishMemoInput, now: string): Promise<Memo>;
   listActiveMemos(): Promise<Memo[]>;

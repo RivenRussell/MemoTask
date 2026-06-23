@@ -19,6 +19,7 @@ export class ApiClient {
 
   async listMemos(): Promise<Memo[]> {
     const body = await this.request<{ memos: Memo[] }>("/api/memos");
+    assertArray(body.memos);
     return body.memos;
   }
 
@@ -28,6 +29,13 @@ export class ApiClient {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input)
     });
+    assertPresent(body.memo);
+    return body.memo;
+  }
+
+  async getMemo(memoId: string): Promise<Memo> {
+    const body = await this.request<{ memo: Memo }>(`/api/memos/${memoId}`);
+    assertPresent(body.memo);
     return body.memo;
   }
 
@@ -37,11 +45,23 @@ export class ApiClient {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input)
     });
+    assertPresent(body.draft);
+    return body.draft;
+  }
+
+  async updateDraft(draftId: string, input: DraftInput): Promise<Memo> {
+    const body = await this.request<{ draft: Memo }>(`/api/drafts/${draftId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input)
+    });
+    assertPresent(body.draft);
     return body.draft;
   }
 
   async listRecentDrafts(): Promise<Memo[]> {
     const body = await this.request<{ drafts: Memo[] }>("/api/drafts/recent");
+    assertArray(body.drafts);
     return body.drafts;
   }
 
@@ -55,6 +75,7 @@ export class ApiClient {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input)
     });
+    assertPresent(body.memo);
     return body.memo;
   }
 
@@ -64,11 +85,21 @@ export class ApiClient {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ memoIds })
     });
+    assertArray(body.memos);
     return body.memos;
+  }
+
+  async reorderTodos(memoId: string, todoIds: string[]): Promise<void> {
+    await this.request<{ todos: unknown[] }>("/api/todos/reorder", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ memoId, todoIds })
+    });
   }
 
   async archiveMemo(memoId: string): Promise<Memo> {
     const body = await this.request<{ memo: Memo }>(`/api/memos/${memoId}/archive`, { method: "POST" });
+    assertPresent(body.memo);
     return body.memo;
   }
 
@@ -94,16 +125,19 @@ export class ApiClient {
 
   async listHistory(): Promise<Memo[]> {
     const body = await this.request<{ memos: Memo[] }>("/api/history");
+    assertArray(body.memos);
     return body.memos;
   }
 
   async searchHistory(query: string): Promise<Memo[]> {
     const body = await this.request<{ memos: Memo[] }>(`/api/history/search?q=${encodeURIComponent(query)}`);
+    assertArray(body.memos);
     return body.memos;
   }
 
   async restoreMemo(memoId: string): Promise<Memo> {
     const body = await this.request<{ memo: Memo }>(`/api/memos/${memoId}/restore`, { method: "POST" });
+    assertPresent(body.memo);
     return body.memo;
   }
 
@@ -125,6 +159,7 @@ export class ApiClient {
 
   async getAiSettings(): Promise<AiSettingsView> {
     const body = await this.request<{ settings: AiSettingsView }>("/api/ai/settings");
+    assertPresent(body.settings);
     return body.settings;
   }
 
@@ -134,11 +169,13 @@ export class ApiClient {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input)
     });
+    assertPresent(body.settings);
     return body.settings;
   }
 
   async resetAiPrompt(): Promise<AiSettingsView> {
     const body = await this.request<{ settings: AiSettingsView }>("/api/ai/reset-prompt", { method: "POST" });
+    assertPresent(body.settings);
     return body.settings;
   }
 
@@ -152,6 +189,7 @@ export class ApiClient {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ draftId })
     });
+    assertPresent(body.result);
     return body.result;
   }
 
@@ -161,6 +199,7 @@ export class ApiClient {
 
   async getSyncStatus(): Promise<SyncStatusView> {
     const body = await this.request<{ status: SyncStatusView }>("/api/sync/status");
+    assertPresent(body.status);
     return body.status;
   }
 
@@ -177,3 +216,15 @@ export class ApiClient {
 }
 
 export const apiClient = new ApiClient();
+
+function assertPresent<T>(value: T | null | undefined): asserts value is T {
+  if (value === null || value === undefined) {
+    throw new Error("请求失败，请稍后重试");
+  }
+}
+
+function assertArray(value: unknown): asserts value is unknown[] {
+  if (!Array.isArray(value)) {
+    throw new Error("请求失败，请稍后重试");
+  }
+}

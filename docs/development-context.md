@@ -1,213 +1,218 @@
 # MemoTask V1 Development Context
 
 Created: 2026-06-22
+Updated: 2026-06-23
 
-This document records the user-approved development context before starting the long-running V1 implementation goal. It is intended to survive context compaction and should be treated as the current local handoff note.
+This document records the implementation context for MemoTask V1. It is safe to keep in the repository and avoids private Cloudflare account identifiers, dashboard URLs, and full secrets.
 
 ## Source Of Truth
 
-Use `docs/memotask-v1-employee-task-plan.md` as the primary product and engineering source of truth.
+Primary product and engineering plan:
 
-If it conflicts with earlier planning documents, follow `docs/memotask-v1-employee-task-plan.md`.
+```text
+docs/memotask-v1-employee-task-plan.md
+```
 
 Supporting files:
 
-- `docs/v1-implementation-task-plan.md`
-- `docs/readable-design-plan.md`
-- `docs/project-plan.md`
-- `docs/ui-mockups/`
+```text
+docs/v1-implementation-task-plan.md
+docs/readable-design-plan.md
+docs/project-plan.md
+docs/ui-mockups/
+```
 
-## User Decisions
+If planning documents conflict, prefer the employee task plan and then the current code.
 
-The user confirmed:
+## Product Decisions
 
-1. Scope is the complete V1 flow, not a single phase: Phase 0 through Phase 5 from the employee task plan.
-2. Creating a Git repository in `G:\Code\MemoTask` is allowed.
-3. Package manager and project tooling are left to Codex judgment.
-4. Cloudflare setup should be guided step by step, or automated through the user's browser/computer where safe.
-5. AI model should be `dsv4-pro`.
-6. UI language should be Chinese from the start.
-7. Missing UI state designs should be inferred from the existing visual system.
-8. Cloudflare account operations are allowed when they are needed for the project. Ask for confirmation before any paid operation, including buying a domain, changing to a paid plan, enabling a paid resource, or taking an action that may create billing.
+V1 scope:
+
+1. Complete the MemoTask V1 flow rather than a single phase.
+2. Use Chinese UI from the start.
+3. Keep the product focused on Memo capture, Todo extraction, queue ordering, detail management, and History.
+4. Infer missing UI states from the existing Soft Clay visual system.
+5. Avoid dates, reminders, tags, payments, subscriptions, independent search pages, and a self-built login page in V1.
+6. Use DeepSeek/OpenAI-compatible AI settings with default base URL `https://api.deepseek.com` and model `deepseek-v4-pro`.
+
+## Technical Direction
+
+MemoTask uses:
+
+- React + TypeScript + Vite for the frontend.
+- Hono inside Cloudflare Workers for API routes.
+- Cloudflare Workers Assets for static files.
+- Cloudflare D1 for persistence.
+- Cloudflare Access as an optional deployment-level protection layer.
+- Vitest and Playwright for verification.
+
+The app is intentionally deployed as a single Worker so frontend, API, and static assets move together.
 
 ## Credential Handling
 
-The user supplied an AI API key in chat for later configuration.
+Never commit full secrets.
 
-Do not write the full API key into repo files, documentation, committed code, screenshots, or logs.
+Do not write full AI API keys into:
 
-Use only masked form in documents:
+- repo files
+- documentation
+- committed screenshots
+- logs
+- test artifacts intended for GitHub
 
-```text
-sk-...b456
-```
-
-For local development, store secrets outside committed files, preferably:
-
-- `.dev.vars`, ignored by Git
-- `wrangler secret put`
-- Cloudflare dashboard secret UI
-
-Required secrets:
-
-- `AI_API_KEY` or user-configured encrypted value through app Settings
-- `APP_ENCRYPTION_KEY` for Worker-side encryption of stored AI API keys
-
-## Recommended Technical Direction
-
-Use a React + TypeScript + Vite frontend and Cloudflare Workers backend.
-
-The app should be deployable to Cloudflare with:
-
-- Cloudflare Workers for API routes
-- Cloudflare D1 for persistent data
-- Cloudflare Access for protecting the app
-- Cloudflare Pages or Workers static asset serving for the frontend, depending on the final scaffold that gives the cleanest local and deployment workflow
-
-Prefer a modern Cloudflare/Vite-compatible structure over a split setup if it keeps local development and deployment simpler.
-
-## Cloudflare Current State
-
-The user is logged into Cloudflare Dashboard in Chrome.
-
-Detailed Cloudflare setup notes are recorded in `docs/cloudflare-setup.md`.
-
-Observed account:
+Use only placeholder or masked values in docs:
 
 ```text
-956039339@qq.com's Account
+sk-...last4
 ```
 
-Observed account URL prefix:
+Production secret:
 
 ```text
-https://dash.cloudflare.com/30f2292f8bb323d4a658c7d1f09bd301
+APP_ENCRYPTION_KEY
 ```
 
-Observed Dashboard state:
-
-- Domains overview is accessible.
-- Workers and Pages navigation is visible.
-- D1 SQLite database navigation is visible.
-- D1 database `memotask-db` has been created.
-- D1 database id is `3c84d13d-803f-41d3-ab97-292ba1500708`.
-- Zero Trust is active on the Free plan.
-- Zero Trust team name is `frosty-resonance-2e7a`.
-- Access default one-time PIN email login is acceptable for V1 unless the user requests another identity provider.
-- Access rule group `MemoTask owner only` has been created.
-- Access rule group id is `322c66a6-ca17-43b0-a394-c4d1e43e5a01`.
-- Access rule group condition is `Include` / `Emails` / `956039339@qq.com`.
-- Access application has not been created because no deployed app URL, Worker target, or Pages project exists yet.
-- No domain is currently visible in Domains overview; the page showed "未找到域或子域" at the time of inspection.
-- Cloudflare displays an "Agent Lee" prompt asking to create a read-only API token. This is not needed for MemoTask development unless the user explicitly wants to grant that integration.
-
-Zero Trust free plan selection was started by Codex but stopped at a checkout/payment URL. The user manually completed activation afterward.
-
-## Cloudflare Resources To Create
-
-Suggested names:
-
-- Project/app name: `memotask`
-- Worker name: `memotask-api` or unified `memotask`
-- D1 database name: `memotask-db`
-- Pages project name if using Pages: `memotask`
-- Production domain: to be decided by user
-
-Required Cloudflare resources:
-
-1. D1 database. Completed: `memotask-db`.
-2. Zero Trust Free. Completed by the user.
-3. Access owner-only rule group. Completed: `MemoTask owner only`.
-4. Worker or Pages project with API route support. Pending until code scaffold/deploy.
-5. D1 binding in `wrangler.toml`. Pending until scaffold.
-6. `APP_ENCRYPTION_KEY` secret. Pending until Worker exists.
-7. Cloudflare Access application protecting the production app. Pending until a final app URL exists.
-
-Potential blocker:
-
-- If the user wants Cloudflare Access on a clean production URL, a custom domain connected to Cloudflare is strongly preferred.
-- If no domain is available, development and preview can still proceed locally and with Cloudflare preview URLs, but final Access setup may need a custom domain or a supported Pages/Workers Access path.
-
-## Cloudflare Setup Plan
-
-Do this after the app scaffold exists and local scripts are ready.
-
-1. Create or confirm D1 database.
-   - Preferred CLI path after Wrangler login:
-     `wrangler d1 create memotask-db`
-   - Record generated database id in `wrangler.toml`.
-
-2. Configure D1 migrations.
-   - Keep migrations under a project `migrations/` directory.
-   - Use Wrangler D1 migration commands for local and remote execution.
-
-3. Configure Worker secrets.
-   - Generate a strong `APP_ENCRYPTION_KEY`.
-   - Store it with `wrangler secret put APP_ENCRYPTION_KEY`.
-   - Do not commit secret values.
-
-4. Deploy preview.
-   - Use the chosen Cloudflare deploy command.
-   - Verify `/api/health`.
-   - Verify frontend loads.
-
-5. Configure Cloudflare Access.
-   - Protect the production app URL.
-   - Attach the existing `MemoTask owner only` Access rule group unless the user requests a different policy.
-   - The user permits Cloudflare operations, but ask before any paid or potentially billable action.
-
-6. Smoke test.
-   - Access-protected app prompts for Cloudflare authentication.
-   - Authenticated user can load the app.
-   - `/api/health` succeeds.
-   - D1-backed endpoints work.
-
-## UI And Product Constraints
-
-The implementation must stay inside V1:
-
-- No date system.
-- No Today or Upcoming.
-- No reminders or notifications.
-- No tags.
-- No independent search page.
-- No payment, membership, subscription, or upgrade entry.
-- No self-built login page in V1.
-- No AI regeneration after publish.
-- No AI date assignment.
-- No AI memo sorting.
-
-Chinese UI is required.
-
-Use existing UI mockups as visual baseline:
-
-- Android: Memos, Capture, Memo Detail, History, Settings
-- PC: Memos, Capture, History
-
-Missing states should be inferred with the same Soft Clay Neumorphism style:
-
-- Memos empty state
-- Capture AI loading
-- Capture AI failed
-- History empty state
-- History no search results
-- History undo toast
-- Settings test success
-- Settings test failed
-
-## Goal Recommendation
-
-Create a long-running goal for:
+Local-only secret files should remain ignored:
 
 ```text
-Implement MemoTask V1 end to end from Phase 0 through Phase 5 according to docs/memotask-v1-employee-task-plan.md, using Chinese UI, the provided UI mockups, Cloudflare Workers/D1/Access, model dsv4-pro, and safe secret handling.
+.dev.vars
+.env
+.env.*
 ```
 
-Expected execution style:
+AI API keys are entered through the app Settings page and encrypted before D1 persistence.
 
-- Initialize Git.
-- Build in phases.
-- Verify each phase before moving to the next.
-- Keep changes surgical and consistent with the plan.
-- Use tests and browser QA before claiming completion.
-- Document Cloudflare manual/automated setup steps as they are completed.
+## Cloudflare State
+
+Detailed setup and reproduction steps are in:
+
+```text
+docs/cloudflare-setup.md
+```
+
+Current public production URL:
+
+```text
+https://memotask.rrwks.cn/memos
+```
+
+Current Cloudflare resources:
+
+```text
+Worker name: memotask
+D1 database name: memotask-db
+D1 binding: DB
+Custom domain: memotask.rrwks.cn
+Worker secret: APP_ENCRYPTION_KEY
+```
+
+Cloudflare Access:
+
+- Zero Trust Free has been used during setup.
+- An owner-only Access policy was tested earlier.
+- Current production custom domain is public for cross-device testing.
+- Before broad sharing, either re-enable Cloudflare Access or add application-level auth in V2.
+
+## Latest Verified Deployment
+
+UI polish deployment:
+
+```text
+Date: 2026-06-23
+Worker version ID: 2dd6e63e-27c9-4a09-94a3-64e7b9b31555
+Production JS bundle: /assets/index-C0wqRxWN.js
+Production CSS bundle: /assets/index-C_BKT7Az.css
+```
+
+Verification:
+
+```text
+npm test -> 13 files, 57 tests passed
+npm run build -> passed
+Android visual QA -> 6 passed
+PC visual QA -> 5 passed, 1 Android-only check skipped
+GET https://memotask.rrwks.cn/api/health -> {"ok":true}
+GET https://memotask.rrwks.cn/memos -> 200 OK
+```
+
+UI changes in the latest deployment:
+
+- Mobile Memo detail page now opens at the top and prioritizes Todo management.
+- Memo cards show a hidden Todo count when more than three Todo items exist.
+- Empty queue state is simplified.
+- History Todo visual checkboxes no longer stretch wider than normal.
+
+## Implementation Notes
+
+Core frontend files:
+
+```text
+src/App.tsx
+src/components/AppShell.tsx
+src/components/MemoCard.tsx
+src/pages/CapturePage.tsx
+src/pages/MemosPage.tsx
+src/pages/MemoDetailPage.tsx
+src/pages/HistoryPage.tsx
+src/pages/SettingsPage.tsx
+src/state/app-state.ts
+src/styles.css
+```
+
+Core Worker files:
+
+```text
+worker/index.ts
+worker/api.ts
+worker/domain/state-machines.ts
+worker/repository/d1-repository.ts
+worker/repository/memory-repository.ts
+worker/repository/types.ts
+```
+
+Database migration:
+
+```text
+migrations/0001_initial.sql
+```
+
+The repository uses a `MemoryRepository` for tests and a `D1Repository` for production.
+
+## Verification Commands
+
+Use these before deployment:
+
+```bash
+npm test
+npm run build
+npx playwright test tests/e2e/visual-qa.spec.ts --project=android
+npx playwright test tests/e2e/visual-qa.spec.ts --project=pc
+```
+
+Use these after deployment:
+
+```bash
+curl https://memotask.rrwks.cn/api/health
+curl -I https://memotask.rrwks.cn/memos
+curl -s https://memotask.rrwks.cn/memos
+```
+
+The final command should show the latest `/assets/index-*.js` and `/assets/index-*.css` references.
+
+## Remaining Product Decisions
+
+Before public use:
+
+1. Decide whether `memotask.rrwks.cn` remains public.
+2. Choose Cloudflare Access or application-level auth for V2.
+3. Decide whether preview URLs should remain public.
+4. Consider whether AI settings should become per-user after auth exists.
+
+## GitHub Upload Checklist
+
+Before pushing:
+
+1. Confirm `.dev.vars`, `.env`, `dist/`, `.wrangler/`, `output/`, and `test-results/` are not staged.
+2. Search for full API keys and private Cloudflare IDs.
+3. Keep only masked or placeholder secrets in docs.
+4. Review `README.md` and `docs/cloudflare-setup.md` as the public entry points.

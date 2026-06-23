@@ -33,7 +33,7 @@ export function SettingsPage({
         <label htmlFor="base-url">接口地址</label>
         <input
           id="base-url"
-          placeholder="https://api.example.com/v1"
+          placeholder="https://api.deepseek.com"
           value={draft.baseUrl}
           onChange={(event) => onUpdateDraft({ baseUrl: event.target.value })}
         />
@@ -42,7 +42,7 @@ export function SettingsPage({
         <label htmlFor="api-key">API 密钥</label>
         <input
           id="api-key"
-          placeholder={settings?.apiKeyMask ?? "sk-...b456"}
+          placeholder={settings?.apiKeyMask ?? "sk-...last4"}
           type="password"
           value={draft.apiKey}
           onChange={(event) => onUpdateDraft({ apiKey: event.target.value })}

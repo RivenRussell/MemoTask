@@ -45,6 +45,19 @@ export class MemoryRepository implements MemoRepository {
     return cloneMemo(draft);
   }
 
+  async updateDraft(draftId: string, input: DraftInput, now: string): Promise<Memo | null> {
+    const draft = this.memos.find((memo) => memo.id === draftId && memo.status === "draft" && memo.deletedAt === null);
+    if (!draft) {
+      return null;
+    }
+
+    draft.title = input.title?.trim() || "未命名 Memo";
+    draft.content = input.content;
+    draft.updatedAt = now;
+    this.trimDrafts(3);
+    return cloneMemo(draft);
+  }
+
   async listRecentDrafts(limit: number): Promise<Memo[]> {
     return this.memos
       .filter((memo) => memo.status === "draft" && memo.deletedAt === null)
@@ -315,7 +328,7 @@ export class MemoryRepository implements MemoRepository {
     this.aiSettings = {
       ...existing,
       baseUrl: input.baseUrl.trim(),
-      model: input.model.trim() || "dsv4-pro",
+      model: input.model.trim() || DEFAULT_AI_MODEL,
       encryptedApiKey: input.encryptedApiKey ?? existing.encryptedApiKey,
       apiKeyMask: input.apiKeyMask ?? existing.apiKeyMask,
       promptTemplate: input.promptTemplate,
@@ -357,12 +370,15 @@ export class MemoryRepository implements MemoRepository {
   }
 }
 
+export const DEFAULT_AI_BASE_URL = "https://api.deepseek.com";
+export const DEFAULT_AI_MODEL = "deepseek-v4-pro";
+
 function createDefaultAiSettings(now: string): AiSettings {
   return {
     id: "default",
     userId: "default",
-    baseUrl: "",
-    model: "dsv4-pro",
+    baseUrl: DEFAULT_AI_BASE_URL,
+    model: DEFAULT_AI_MODEL,
     encryptedApiKey: null,
     apiKeyMask: null,
     promptTemplate: DEFAULT_PROMPT,
@@ -381,4 +397,14 @@ export const DEFAULT_PROMPT = `你是 MemoTask 的整理助手。你的任务是
 5. 不要改变 Memo 排序。
 6. 不要把背景、情绪、观点、资料描述强行变成 Todo。
 7. 如果 Memo 中没有明确行动项，可以返回空 todos。
-8. 输出必须是 JSON，不要输出 Markdown。`;
+8. 输出必须是 JSON，不要输出 Markdown。
+
+JSON 输出格式示例：
+{
+  "title": "PPT Skill 开发",
+  "todos": [
+    { "title": "梳理 PPT Skill 的使用场景", "notes": null },
+    { "title": "设计 PPT Skill 的执行流程", "notes": null },
+    { "title": "实现并测试 PPT 导出效果", "notes": "确保输出可直接使用" }
+  ]
+}`;

@@ -5,6 +5,11 @@ import type { AiSettingsView, DraftTodoInput, Memo, PublishMemoInput, SyncStatus
 export type Page = "capture" | "memos" | "memoDetail" | "settings" | "history";
 export type PrimaryPage = "capture" | "memos" | "settings";
 
+interface RouteState {
+  page: Page;
+  memoId: string | null;
+}
+
 export interface DraftState {
   title: string;
   content: string;
@@ -46,14 +51,17 @@ export interface AppState {
   loadRecentDraft: (draftId: string) => void;
   addDraftTodo: (title: string) => void;
   removeDraftTodo: (index: number) => void;
+  moveDraftTodo: (index: number, direction: "up" | "down") => void;
   analyzeDraft: () => Promise<void>;
   publishDraft: () => Promise<void>;
   toggleTodo: (todoId: string) => Promise<void>;
   moveMemo: (memoId: string, direction: "up" | "down") => Promise<void>;
+  reorderMemoList: (memoIds: string[]) => Promise<void>;
   updateActiveMemo: (input: { title: string; content: string }) => Promise<void>;
   addActiveMemoTodo: (title: string) => Promise<void>;
   updateActiveMemoTodo: (todoId: string, title: string) => Promise<void>;
   deleteActiveMemoTodo: (todoId: string) => Promise<void>;
+  reorderActiveMemoTodos: (todoIds: string[]) => Promise<void>;
   archiveActiveMemo: () => Promise<void>;
   restoreMemo: (memoId: string) => Promise<void>;
   refreshMemos: () => Promise<void>;
@@ -75,14 +83,16 @@ const emptyDraft: DraftState = {
 };
 
 const defaultAiSettingsDraft: AiSettingsDraft = {
-  baseUrl: "",
-  model: "dsv4-pro",
+  baseUrl: "https://api.deepseek.com",
+  model: "deepseek-v4-pro",
   apiKey: "",
   promptTemplate: "你是 MemoTask 的整理助手。"
 };
 
 export function useMemoTaskState(client: ApiClient = apiClient): AppState {
-  const [page, setPageState] = useState<Page>("memos");
+  const initialRoute = routeFromPath();
+  const [page, setPageState] = useState<Page>(initialRoute.page);
+  const [routeMemoId, setRouteMemoId] = useState<string | null>(initialRoute.memoId);
   const [memos, setMemos] = useState<Memo[]>([]);
   const [activeMemo, setActiveMemo] = useState<Memo | null>(null);
   const [historyMemos, setHistoryMemos] = useState<Memo[]>([]);
@@ -105,16 +115,39 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   const title = useMemo(() => pageTitle(page), [page]);
 
   useEffect(() => {
+    if (window.location.pathname === "/") {
+      window.history.replaceState({}, "", "/memos");
+    }
     void refreshMemos();
   }, []);
 
   useEffect(() => {
-    if (page !== "capture") {
-      return;
+    function handlePopState() {
+      const nextRoute = routeFromPath();
+      applyRoute(nextRoute, false);
     }
 
-    void refreshDrafts();
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [memos]);
+
+  useEffect(() => {
+    if (page === "capture") {
+      void refreshDrafts();
+    }
+    if (page === "history") {
+      void refreshHistory();
+    }
+    if (page === "settings") {
+      void refreshSettings();
+    }
   }, [page]);
+
+  useEffect(() => {
+    if (page === "memoDetail" && routeMemoId) {
+      void loadMemoDetail(routeMemoId);
+    }
+  }, [page, routeMemoId]);
 
   useEffect(() => {
     if (page !== "capture" || !draft.content.trim()) {
@@ -124,7 +157,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     setCaptureMessage("草稿保存中");
     const timeout = window.setTimeout(() => {
       void saveCurrentDraft();
-    }, 350);
+    }, 1000);
 
     return () => window.clearTimeout(timeout);
   }, [page, draft.title, draft.content]);
@@ -152,15 +185,21 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   }
 
   function setPage(page: Page) {
-    setPageState(page);
-    if (page === "history") {
-      void refreshHistory();
+    applyRoute({ page, memoId: null }, true);
+  }
+
+  function applyRoute(route: RouteState, updateUrl: boolean) {
+    setPageState(route.page);
+    setRouteMemoId(route.memoId);
+    if (route.page !== "memoDetail") {
+      setActiveMemo(null);
     }
-    if (page === "settings") {
-      void refreshSettings();
-    }
-    if (page === "capture") {
-      void refreshDrafts();
+
+    if (updateUrl) {
+      const path = pathForRoute(route);
+      if (window.location.pathname !== path) {
+        window.history.pushState({}, "", path);
+      }
     }
   }
 
@@ -172,7 +211,14 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
 
     setActiveMemo(selectedMemo);
     setDetailMessage(null);
-    setPageState("memoDetail");
+    applyRoute({ page: "memoDetail", memoId }, true);
+  }
+
+  async function loadMemoDetail(memoId: string) {
+    await run(async () => {
+      setActiveMemo(await client.getMemo(memoId));
+      setDetailMessage(null);
+    });
   }
 
   function updateDraft(patch: Partial<DraftState>) {
@@ -217,6 +263,19 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     }));
   }
 
+  function moveDraftTodo(index: number, direction: "up" | "down") {
+    setDraft((current) => {
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= current.todos.length) {
+        return current;
+      }
+
+      const todos = [...current.todos];
+      [todos[index], todos[targetIndex]] = [todos[targetIndex], todos[index]];
+      return { ...current, todos };
+    });
+  }
+
   async function refreshDrafts() {
     await run(async () => {
       setRecentDrafts(await client.listRecentDrafts());
@@ -230,10 +289,11 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
 
     let savedDraftId: string | null = null;
     await run(async () => {
-      const savedDraft = await client.createDraft({
+      const draftInput = {
         title: draft.title.trim() || undefined,
         content: draft.content
-      });
+      };
+      const savedDraft = currentDraftId ? await client.updateDraft(currentDraftId, draftInput) : await client.createDraft(draftInput);
       savedDraftId = savedDraft.id;
       setCurrentDraftId(savedDraft.id);
       setRecentDrafts(await client.listRecentDrafts());
@@ -277,28 +337,48 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     }
 
     const input: PublishMemoInput = {
+      draftId: currentDraftId ?? undefined,
       title: draft.title.trim() || "未命名 Memo",
       content: draft.content,
       todos: draft.todos
     };
 
+    setCaptureMessage("发布中");
     await run(async () => {
       await client.publishMemo(input);
       setDraft(emptyDraft);
       setCurrentDraftId(null);
       setCaptureMessage(null);
       setRecentDrafts(await client.listRecentDrafts());
-      setPageState("memos");
+      applyRoute({ page: "memos", memoId: null }, true);
       setMemos(await client.listMemos());
     });
   }
 
   async function toggleTodo(todoId: string) {
+    const previousMemos = memos;
+    const previousActiveMemo = activeMemo;
+    const optimisticMemos = toggleTodoInMemos(memos, todoId);
+    const optimisticActiveMemo = activeMemo ? toggleTodoInMemo(activeMemo, todoId)?.memo ?? activeMemo : activeMemo;
+
+    if (optimisticMemos !== memos) {
+      setMemos(optimisticMemos);
+    }
+    if (optimisticActiveMemo !== activeMemo) {
+      setActiveMemo(optimisticActiveMemo);
+    }
+
     await run(async () => {
-      await client.toggleTodo(todoId);
-      const nextMemos = await client.listMemos();
-      setMemos(nextMemos);
-      setActiveMemo((current) => nextMemos.find((memo) => memo.id === current?.id) ?? current);
+      try {
+        await client.toggleTodo(todoId);
+        const nextMemos = await client.listMemos();
+        setMemos(nextMemos);
+        setActiveMemo((current) => nextMemos.find((memo) => memo.id === current?.id) ?? current);
+      } catch (caught) {
+        setMemos(previousMemos);
+        setActiveMemo(previousActiveMemo);
+        throw caught;
+      }
     });
   }
 
@@ -318,11 +398,24 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     });
   }
 
+  async function reorderMemoList(memoIds: string[]) {
+    const nextMemos = memoIds.map((memoId) => memos.find((memo) => memo.id === memoId)).filter((memo): memo is Memo => Boolean(memo));
+    if (nextMemos.length !== memos.length) {
+      return;
+    }
+
+    await run(async () => {
+      setMemos(nextMemos);
+      setMemos(await client.reorderMemos(memoIds));
+    });
+  }
+
   async function updateActiveMemo(input: { title: string; content: string }) {
     if (!activeMemo) {
       return;
     }
 
+    setDetailMessage("Memo 保存中");
     await run(async () => {
       const updated = await client.updateMemo(activeMemo.id, input);
       setActiveMemo(updated);
@@ -337,11 +430,37 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
       return;
     }
 
+    const previousMemos = memos;
+    const previousActiveMemo = activeMemo;
+    const optimisticTodo: Memo["todos"][number] = {
+      id: `optimistic-todo-${Date.now()}`,
+      memoId: activeMemo.id,
+      title: trimmed,
+      notes: null,
+      status: "todo",
+      sortOrder: activeMemo.todos.length + 1,
+      generatedByAi: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      completedAt: null,
+      deletedAt: null
+    };
+    const optimisticMemo = { ...activeMemo, todos: [...activeMemo.todos, optimisticTodo], autoArchiveSuppressedUntilChange: false };
+
+    setActiveMemo(optimisticMemo);
+    setMemos(replaceMemo(memos, optimisticMemo));
+
     await run(async () => {
-      await client.createTodo(activeMemo.id, { title: trimmed, notes: null, generatedByAi: false });
-      const nextMemos = await client.listMemos();
-      setMemos(nextMemos);
-      setActiveMemo(nextMemos.find((memo) => memo.id === activeMemo.id) ?? activeMemo);
+      try {
+        await client.createTodo(activeMemo.id, { title: trimmed, notes: null, generatedByAi: false });
+        const nextMemos = await client.listMemos();
+        setMemos(nextMemos);
+        setActiveMemo(nextMemos.find((memo) => memo.id === activeMemo.id) ?? optimisticMemo);
+      } catch (caught) {
+        setMemos(previousMemos);
+        setActiveMemo(previousActiveMemo);
+        throw caught;
+      }
     });
   }
 
@@ -364,11 +483,45 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
       return;
     }
 
+    const previousMemos = memos;
+    const previousActiveMemo = activeMemo;
+    const optimisticMemo = { ...activeMemo, todos: activeMemo.todos.filter((todo) => todo.id !== todoId), autoArchiveSuppressedUntilChange: false };
+
+    setActiveMemo(optimisticMemo);
+    setMemos(replaceMemo(memos, optimisticMemo));
+
     await run(async () => {
-      await client.deleteTodo(todoId);
+      try {
+        await client.deleteTodo(todoId);
+        const nextMemos = await client.listMemos();
+        setMemos(nextMemos);
+        setActiveMemo(nextMemos.find((memo) => memo.id === activeMemo.id) ?? optimisticMemo);
+      } catch (caught) {
+        setMemos(previousMemos);
+        setActiveMemo(previousActiveMemo);
+        throw caught;
+      }
+    });
+  }
+
+  async function reorderActiveMemoTodos(todoIds: string[]) {
+    if (!activeMemo) {
+      return;
+    }
+
+    const orderedTodos = todoIds
+      .map((todoId) => activeMemo.todos.find((todo) => todo.id === todoId))
+      .filter((todo): todo is Memo["todos"][number] => Boolean(todo));
+    if (orderedTodos.length !== activeMemo.todos.length) {
+      return;
+    }
+
+    await run(async () => {
+      setActiveMemo({ ...activeMemo, todos: orderedTodos });
+      await client.reorderTodos(activeMemo.id, todoIds);
       const nextMemos = await client.listMemos();
       setMemos(nextMemos);
-      setActiveMemo(nextMemos.find((memo) => memo.id === activeMemo.id) ?? { ...activeMemo, todos: activeMemo.todos.filter((todo) => todo.id !== todoId) });
+      setActiveMemo(nextMemos.find((memo) => memo.id === activeMemo.id) ?? { ...activeMemo, todos: orderedTodos });
     });
   }
 
@@ -377,20 +530,23 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
       return;
     }
 
+    setDetailMessage("归档中");
     await run(async () => {
       await client.archiveMemo(activeMemo.id);
       setActiveMemo(null);
       setMemos(await client.listMemos());
-      setPageState("history");
+      applyRoute({ page: "history", memoId: null }, true);
       setHistoryMemos(await client.listHistory());
     });
   }
 
   async function restoreMemo(memoId: string) {
+    setHistoryMessage("恢复中");
     await run(async () => {
       await client.restoreMemo(memoId);
-      setPageState("memos");
+      applyRoute({ page: "memos", memoId: null }, true);
       setMemos(await client.listMemos());
+      setHistoryMessage("已恢复 Memo");
     });
   }
 
@@ -410,6 +566,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
       return;
     }
 
+    setHistoryMessage("删除中");
     await run(async () => {
       const result = await client.bulkDeleteHistory(memoIds);
       setLastHistoryDeleteOperationId(result.operation.id);
@@ -423,6 +580,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
       return;
     }
 
+    setHistoryMessage("撤销中");
     await run(async () => {
       await client.undoHistoryDelete(lastHistoryDeleteOperationId);
       setLastHistoryDeleteOperationId(null);
@@ -446,6 +604,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   }
 
   async function saveAiSettings() {
+    setSettingsMessage("设置保存中");
     await run(async () => {
       const nextSettings = await client.saveAiSettings({
         baseUrl: aiSettingsDraft.baseUrl,
@@ -465,6 +624,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   }
 
   async function resetAiPrompt() {
+    setSettingsMessage("Prompt 恢复中");
     await run(async () => {
       const nextSettings = await client.resetAiPrompt();
       setAiSettings(nextSettings);
@@ -474,6 +634,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   }
 
   async function testAiConnection() {
+    setSettingsMessage("连接测试中");
     await run(async () => {
       await client.testAiConnection();
       setSettingsMessage("连接测试通过");
@@ -481,6 +642,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   }
 
   async function exportJson() {
+    setSettingsMessage("JSON 导出中");
     await run(async () => {
       await client.exportJson();
       setSettingsMessage("JSON 导出已生成");
@@ -515,14 +677,17 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     loadRecentDraft,
     addDraftTodo,
     removeDraftTodo,
+    moveDraftTodo,
     analyzeDraft,
     publishDraft,
     toggleTodo,
     moveMemo,
+    reorderMemoList,
     updateActiveMemo,
     addActiveMemoTodo,
     updateActiveMemoTodo,
     deleteActiveMemoTodo,
+    reorderActiveMemoTodos,
     archiveActiveMemo,
     restoreMemo,
     refreshMemos,
@@ -544,4 +709,79 @@ function pageTitle(page: Page): string {
   if (page === "settings") return "设置";
   if (page === "history") return "历史";
   return "队列";
+}
+
+function routeFromPath(pathname: string = window.location.pathname): RouteState {
+  if (pathname === "/capture") return { page: "capture", memoId: null };
+  if (pathname === "/settings") return { page: "settings", memoId: null };
+  if (pathname === "/history") return { page: "history", memoId: null };
+
+  const memoDetailMatch = pathname.match(/^\/memos\/([^/]+)$/);
+  if (memoDetailMatch) {
+    return { page: "memoDetail", memoId: decodeURIComponent(memoDetailMatch[1]) };
+  }
+
+  return { page: "memos", memoId: null };
+}
+
+function pathForRoute(route: RouteState): string {
+  if (route.page === "capture") return "/capture";
+  if (route.page === "settings") return "/settings";
+  if (route.page === "history") return "/history";
+  if (route.page === "memoDetail" && route.memoId) return `/memos/${encodeURIComponent(route.memoId)}`;
+  return "/memos";
+}
+
+function toggleTodoInMemos(memos: Memo[], todoId: string): Memo[] {
+  let changed = false;
+  const nextMemos = memos.flatMap((memo) => {
+    const result = toggleTodoInMemo(memo, todoId);
+    if (!result) {
+      return [memo];
+    }
+
+    changed = true;
+    return result.shouldArchive ? [] : [result.memo];
+  });
+
+  return changed ? nextMemos : memos;
+}
+
+function replaceMemo(memos: Memo[], nextMemo: Memo): Memo[] {
+  return memos.map((memo) => (memo.id === nextMemo.id ? nextMemo : memo));
+}
+
+function toggleTodoInMemo(memo: Memo, todoId: string): { memo: Memo; shouldArchive: boolean } | null {
+  let changed = false;
+  const todos: Memo["todos"] = memo.todos.map((todo) => {
+    if (todo.id !== todoId) {
+      return todo;
+    }
+
+    changed = true;
+    const isDone = todo.status === "done";
+    return {
+      ...todo,
+      status: isDone ? "todo" : "done",
+      completedAt: isDone ? null : new Date().toISOString()
+    };
+  });
+
+  if (!changed) {
+    return null;
+  }
+
+  const visibleTodos = todos.filter((todo) => todo.deletedAt === null);
+  const shouldArchive =
+    !memo.autoArchiveSuppressedUntilChange && visibleTodos.length > 0 && visibleTodos.every((todo) => todo.status === "done");
+
+  return {
+    memo: {
+      ...memo,
+      todos,
+      autoArchiveSuppressedUntilChange: false,
+      updatedAt: new Date().toISOString()
+    },
+    shouldArchive
+  };
 }

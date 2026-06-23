@@ -1,6 +1,6 @@
 import type { Memo, MemoTodo } from "../domain/types";
 import type { AiSettings, AiSettingsInput, DraftInput, MemoRepository, PublishMemoInput, SyncStatus } from "./types";
-import { DEFAULT_PROMPT } from "./memory-repository";
+import { DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, DEFAULT_PROMPT } from "./memory-repository";
 
 type MemoRow = {
   id: string;
@@ -74,6 +74,24 @@ export class D1Repository implements MemoRepository {
     await this.saveMemo(draft);
     await this.trimDrafts(3);
     return draft;
+  }
+
+  async updateDraft(draftId: string, input: DraftInput, now: string): Promise<Memo | null> {
+    const draft = await this.findMemo(draftId);
+    if (!draft || draft.status !== "draft" || draft.deletedAt !== null) {
+      return null;
+    }
+
+    await this.db
+      .prepare(
+        `UPDATE memos
+         SET title = ?, content = ?, updated_at = ?
+         WHERE id = ? AND status = 'draft' AND deleted_at IS NULL`
+      )
+      .bind(input.title?.trim() || "未命名 Memo", input.content, now, draftId)
+      .run();
+    await this.trimDrafts(3);
+    return this.findMemo(draftId);
   }
 
   async listRecentDrafts(limit: number): Promise<Memo[]> {
@@ -328,7 +346,7 @@ export class D1Repository implements MemoRepository {
     const settings: AiSettings = {
       ...existing,
       baseUrl: input.baseUrl.trim(),
-      model: input.model.trim() || "dsv4-pro",
+      model: input.model.trim() || DEFAULT_AI_MODEL,
       encryptedApiKey: input.encryptedApiKey ?? existing.encryptedApiKey,
       apiKeyMask: input.apiKeyMask ?? existing.apiKeyMask,
       promptTemplate: input.promptTemplate,
@@ -610,8 +628,8 @@ function createDefaultAiSettings(now: string): AiSettings {
   return {
     id: "default",
     userId: "default",
-    baseUrl: "",
-    model: "dsv4-pro",
+    baseUrl: DEFAULT_AI_BASE_URL,
+    model: DEFAULT_AI_MODEL,
     encryptedApiKey: null,
     apiKeyMask: null,
     promptTemplate: DEFAULT_PROMPT,

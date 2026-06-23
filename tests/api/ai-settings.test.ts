@@ -25,7 +25,8 @@ describe("AI settings and analyze API", () => {
     const body = await json(response);
 
     expect(response.status).toBe(200);
-    expect(body.settings.model).toBe("dsv4-pro");
+    expect(body.settings.baseUrl).toBe("https://api.deepseek.com");
+    expect(body.settings.model).toBe("deepseek-v4-pro");
     expect(body.settings.apiKeyMask).toBeNull();
     expect(JSON.stringify(body)).not.toContain("encrypted");
     expect(JSON.stringify(body)).not.toContain("sk-");
@@ -39,7 +40,7 @@ describe("AI settings and analyze API", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         baseUrl: "https://api.example.com/v1",
-        apiKey: "sk-test-1234567890abcdef",
+        apiKey: "test-key-1234567890abcdef",
         model: "dsv4-pro",
         promptTemplate: "整理 Memo"
       })
@@ -47,7 +48,7 @@ describe("AI settings and analyze API", () => {
     const body = await json(response);
 
     expect(response.status).toBe(200);
-    expect(body.settings.apiKeyMask).toBe("sk-t...cdef");
+    expect(body.settings.apiKeyMask).toBe("test...cdef");
     expect(JSON.stringify(body)).not.toContain("1234567890");
     expect(JSON.stringify(await repository.getAiSettings("2026-06-22T12:00:00.000Z"))).not.toContain("1234567890");
   });
@@ -63,7 +64,7 @@ describe("AI settings and analyze API", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         baseUrl: "https://api.example.com/v1",
-        apiKey: "sk-test-1234567890abcdef",
+        apiKey: "test-key-1234567890abcdef",
         model: "dsv4-pro",
         promptTemplate: "整理 Memo"
       })
@@ -81,7 +82,7 @@ describe("AI settings and analyze API", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         baseUrl: "https://api.example.com/v1",
-        apiKey: "sk-test-1234567890abcdef",
+        apiKey: "test-key-1234567890abcdef",
         model: "dsv4-pro",
         promptTemplate: "临时 Prompt"
       })
@@ -117,7 +118,15 @@ describe("AI settings and analyze API", () => {
 
   it("analyzes a draft and accepts JSON wrapped in markdown fences", async () => {
     const { app } = createTestApi(async (request) => {
-      expect(request.headers.get("authorization")).toBe("Bearer sk-test-1234567890abcdef");
+      expect(request.headers.get("authorization")).toBe("Bearer test-key-1234567890abcdef");
+      const body = (await request.json()) as {
+        model: string;
+        response_format?: unknown;
+        messages: Array<{ content: string }>;
+      };
+      expect(body.model).toBe("dsv4-pro");
+      expect(body.response_format).toEqual({ type: "json_object" });
+      expect(body.messages[0].content).toContain("\"todos\"");
       return Response.json({
         choices: [
           {
@@ -133,7 +142,7 @@ describe("AI settings and analyze API", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         baseUrl: "https://api.example.com/v1",
-        apiKey: "sk-test-1234567890abcdef",
+        apiKey: "test-key-1234567890abcdef",
         model: "dsv4-pro",
         promptTemplate: "整理 Memo"
       })
@@ -159,5 +168,59 @@ describe("AI settings and analyze API", () => {
       { title: "确认手机支持", notes: null },
       { title: "整理 PC 方案", notes: "对照设计图" }
     ]);
+  });
+
+  it("retries analyze up to three attempts before returning the editable draft result", async () => {
+    let attempts = 0;
+    const { app } = createTestApi(async () => {
+      attempts += 1;
+      if (attempts < 3) {
+        return Response.json({ error: "temporary" }, { status: 502 });
+      }
+
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: "重试后成功",
+                todos: [{ title: "保留草稿继续发布" }]
+              })
+            }
+          }
+        ]
+      });
+    });
+    await app.request("/api/ai/settings", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        baseUrl: "https://api.example.com/v1",
+        apiKey: "test-key-1234567890abcdef",
+        model: "dsv4-pro",
+        promptTemplate: "整理 Memo"
+      })
+    });
+    const draft = await json(
+      await app.request("/api/drafts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ content: "需要测试 AI 重试" })
+      })
+    );
+
+    const response = await app.request("/api/ai/analyze-draft", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ draftId: draft.draft.id })
+    });
+    const body = await json(response);
+
+    expect(response.status).toBe(200);
+    expect(attempts).toBe(3);
+    expect(body.result).toEqual({
+      title: "重试后成功",
+      todos: [{ title: "保留草稿继续发布", notes: null }]
+    });
   });
 });

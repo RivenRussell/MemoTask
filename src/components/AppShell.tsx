@@ -1,4 +1,5 @@
 import { Clock3, ListTodo, Settings, SquarePen } from "lucide-react";
+import { useEffect, useRef } from "react";
 import type { PrimaryPage, Page } from "../state/app-state";
 
 const primaryNav: Array<{
@@ -24,6 +25,14 @@ export function AppShell({
   onNavigate: (page: Page) => void;
   children: React.ReactNode;
 }) {
+  const workspaceRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (workspaceRef.current) {
+      workspaceRef.current.scrollTop = 0;
+    }
+  }, [page, title]);
+
   return (
     <div className="app-frame">
       <aside className="desktop-sidebar" aria-label="桌面导航">
@@ -37,7 +46,7 @@ export function AppShell({
         <PrimaryNavigation activePage={activePrimary} onNavigate={onNavigate} ariaLabel="主导航" />
       </aside>
 
-      <main className="workspace-shell">
+      <main className="workspace-shell" ref={workspaceRef}>
         <header className="topbar">
           <div>
             <p className="section-kicker">Memo 容器 · 顺序即优先级</p>

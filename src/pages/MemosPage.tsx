@@ -1,4 +1,5 @@
-import { FileText } from "lucide-react";
+import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { MemoCard } from "../components/MemoCard";
 import type { Memo } from "../types";
 
@@ -6,65 +7,60 @@ export function MemosPage({
   memos,
   onMoveMemo,
   onOpenMemo,
+  onReorderMemos,
   onToggleTodo
 }: {
   memos: Memo[];
   onMoveMemo: (memoId: string, direction: "up" | "down") => void;
   onOpenMemo: (memoId: string) => void;
+  onReorderMemos: (memoIds: string[]) => void;
   onToggleTodo: (todoId: string) => void;
 }) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) {
+      return;
+    }
+
+    const oldIndex = memos.findIndex((memo) => memo.id === active.id);
+    const newIndex = memos.findIndex((memo) => memo.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) {
+      return;
+    }
+
+    onReorderMemos(arrayMove(memos, oldIndex, newIndex).map((memo) => memo.id));
+  }
+
   return (
     <div className="content-grid memos-grid">
       {memos.length === 0 ? (
-        <>
-          <section className="soft-card intro-card">
-            <p className="section-kicker">当前 Memo 队列</p>
-            <h2>还没有 Memo</h2>
-            <p>
-              从记录页写下一段原始想法，发布后 Memo 会出现在这里。越靠前越值得先处理，不会制造过期压力。
-            </p>
-          </section>
-          <PreviewMemoCard />
-        </>
+        <section className="soft-card intro-card empty-memo-card">
+          <p className="section-kicker">当前 Memo 队列</p>
+          <h2>还没有 Memo</h2>
+          <p>从记录页发布后会出现在这里。</p>
+        </section>
       ) : (
-        memos.map((memo, index) => (
-          <MemoCard
-            canMoveDown={index < memos.length - 1}
-            canMoveUp={index > 0}
-            key={memo.id}
-            memo={memo}
-            onMove={onMoveMemo}
-            onOpen={onOpenMemo}
-            onToggleTodo={onToggleTodo}
-          />
-        ))
+        <DndContext collisionDetection={closestCenter} sensors={sensors} onDragEnd={handleDragEnd}>
+          <SortableContext items={memos.map((memo) => memo.id)} strategy={rectSortingStrategy}>
+            {memos.map((memo, index) => (
+              <MemoCard
+                canMoveDown={index < memos.length - 1}
+                canMoveUp={index > 0}
+                key={memo.id}
+                memo={memo}
+                onMove={onMoveMemo}
+                onOpen={onOpenMemo}
+                onToggleTodo={onToggleTodo}
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
       )}
     </div>
-  );
-}
-
-function PreviewMemoCard() {
-  return (
-    <section className="soft-card memo-preview-card">
-      <div className="card-heading">
-        <FileText size={20} />
-        <h2>Memo 卡片预览</h2>
-      </div>
-      <p className="memo-title">研究 PWA 和拖拽方案</p>
-      <ul className="todo-list">
-        <li>
-          <span className="checkbox-visual" />
-          调研 PWA 对手机和 PC 的支持情况
-        </li>
-        <li className="is-done">
-          <span className="checkbox-visual is-checked" />
-          <span>整理 MemoTask 的实现方案</span>
-        </li>
-        <li>
-          <span className="checkbox-visual" />
-          查找适合拖拽排序的交互库
-        </li>
-      </ul>
-    </section>
   );
 }

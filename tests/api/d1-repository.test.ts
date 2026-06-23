@@ -201,13 +201,13 @@ describe("D1Repository", () => {
         baseUrl: "https://api.example.com/v1",
         model: "dsv4-pro",
         encryptedApiKey: "v1:iv:cipher",
-        apiKeyMask: "sk-t...cdef",
+        apiKeyMask: "test...cdef",
         promptTemplate: "整理 Memo"
       },
       "2026-06-22T12:00:00.000Z"
     );
 
-    expect(settings.apiKeyMask).toBe("sk-t...cdef");
+    expect(settings.apiKeyMask).toBe("test...cdef");
     expect(JSON.stringify(settings)).not.toContain("1234567890");
     expect(settings.encryptedApiKey).toBe("v1:iv:cipher");
   });

@@ -1,3 +1,4 @@
+import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { DraftState } from "../state/app-state";
 import type { Memo } from "../types";
@@ -12,6 +13,7 @@ export function CapturePage({
   onLoadDraft,
   onAddTodo,
   onRemoveTodo,
+  onMoveTodo,
   onAnalyze,
   onPublish
 }: {
@@ -24,6 +26,7 @@ export function CapturePage({
   onLoadDraft: (draftId: string) => void;
   onAddTodo: (title: string) => void;
   onRemoveTodo: (index: number) => void;
+  onMoveTodo: (index: number, direction: "up" | "down") => void;
   onAnalyze: () => Promise<void>;
   onPublish: () => Promise<void>;
 }) {
@@ -90,7 +93,26 @@ export function CapturePage({
             {draft.todos.map((todo, index) => (
               <li key={`${todo.title}-${index}`}>
                 <span>{todo.title}</span>
-                <button className="text-action" type="button" onClick={() => onRemoveTodo(index)}>
+                <button
+                  aria-label={`上移草稿 Todo ${todo.title}`}
+                  className="secondary-action icon-only-action compact-icon-action"
+                  disabled={index === 0}
+                  type="button"
+                  onClick={() => onMoveTodo(index, "up")}
+                >
+                  <ArrowUp size={14} />
+                </button>
+                <button
+                  aria-label={`下移草稿 Todo ${todo.title}`}
+                  className="secondary-action icon-only-action compact-icon-action"
+                  disabled={index === draft.todos.length - 1}
+                  type="button"
+                  onClick={() => onMoveTodo(index, "down")}
+                >
+                  <ArrowDown size={14} />
+                </button>
+                <button className="text-action" type="button" aria-label={`删除草稿 Todo ${todo.title}`} onClick={() => onRemoveTodo(index)}>
+                  <Trash2 size={15} />
                   删除
                 </button>
               </li>

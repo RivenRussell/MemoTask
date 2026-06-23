@@ -32,6 +32,27 @@ describe("memo data loop API", () => {
     expect(body.drafts.map((draft: { content: string }) => draft.content)).toEqual(["第四条", "第三条", "第二条"]);
   });
 
+  it("updates the current draft instead of creating duplicate autosave entries", async () => {
+    const { app } = createTestApi();
+    const createdResponse = await app.request("/api/drafts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ content: "初始草稿" })
+    });
+    const created = await json(createdResponse);
+
+    const updateResponse = await app.request(`/api/drafts/${created.draft.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "更新草稿", content: "更新后的草稿" })
+    });
+    expect(updateResponse.status).toBe(200);
+
+    const drafts = await json(await app.request("/api/drafts/recent"));
+    expect(drafts.drafts).toHaveLength(1);
+    expect(drafts.drafts[0]).toMatchObject({ id: created.draft.id, title: "更新草稿", content: "更新后的草稿" });
+  });
+
   it("publishes a pure memo to the front of the active queue", async () => {
     const { app } = createTestApi();
 
@@ -256,7 +277,22 @@ describe("memo data loop API", () => {
   });
 
   it("exports active and history memos while excluding drafts, deleted memos, and plaintext secrets", async () => {
-    const { app } = createTestApi();
+    const repository = new MemoryRepository();
+    const app = createApi({
+      repository,
+      now: () => "2026-06-22T12:00:00.000Z",
+      appEncryptionKey: "test-encryption-key-for-export"
+    });
+    await app.request("/api/ai/settings", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        baseUrl: "https://api.example.com/v1",
+        apiKey: "test-key-1234567890abcdef",
+        model: "dsv4-pro",
+        promptTemplate: "整理 Memo"
+      })
+    });
     await app.request("/api/drafts", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -282,8 +318,10 @@ describe("memo data loop API", () => {
     const serialized = JSON.stringify(exportBody);
 
     expect(exportBody.memos.map((memo: { title: string }) => memo.title)).toEqual(["导出 Active", "导出 History"]);
+    expect(exportBody.aiSettings).toMatchObject({ baseUrl: "https://api.example.com/v1", model: "dsv4-pro", hasApiKey: true });
     expect(serialized).not.toContain("不应导出的草稿");
     expect(serialized).not.toContain("sk-");
+    expect(serialized).not.toContain("1234567890");
     expect(serialized).not.toContain("encrypted_api_key");
     expect(serialized).toContain(active.memo.todos[0].title);
   });

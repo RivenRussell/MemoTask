@@ -17,21 +17,32 @@ export default function App({ client }: { client?: ApiClient }) {
           memos={state.memos}
           onMoveMemo={(memoId, direction) => void state.moveMemo(memoId, direction)}
           onOpenMemo={state.openMemoDetail}
+          onReorderMemos={(memoIds) => void state.reorderMemoList(memoIds)}
           onToggleTodo={(todoId) => void state.toggleTodo(todoId)}
         />
       ) : null}
-      {state.page === "memoDetail" && state.activeMemo ? (
-        <MemoDetailPage
-          error={state.error}
-          memo={state.activeMemo}
-          message={state.detailMessage}
-          onArchive={() => void state.archiveActiveMemo()}
-          onBack={() => state.setPage("memos")}
-          onCreateTodo={(title) => void state.addActiveMemoTodo(title)}
-          onDeleteTodo={(todoId) => void state.deleteActiveMemoTodo(todoId)}
-          onSaveMemo={(input) => void state.updateActiveMemo(input)}
-          onToggleTodo={(todoId) => void state.toggleTodo(todoId)}
-        />
+      {state.page === "memoDetail" ? (
+        state.activeMemo ? (
+          <MemoDetailPage
+            error={state.error}
+            memo={state.activeMemo}
+            message={state.detailMessage}
+            onArchive={() => void state.archiveActiveMemo()}
+            onBack={() => state.setPage("memos")}
+            onCreateTodo={(title) => void state.addActiveMemoTodo(title)}
+            onDeleteTodo={(todoId) => void state.deleteActiveMemoTodo(todoId)}
+            onReorderTodos={(todoIds) => void state.reorderActiveMemoTodos(todoIds)}
+            onSaveMemo={(input) => void state.updateActiveMemo(input)}
+            onToggleTodo={(todoId) => void state.toggleTodo(todoId)}
+            onUpdateTodo={(todoId, title) => void state.updateActiveMemoTodo(todoId, title)}
+          />
+        ) : (
+          <section className="soft-card intro-card">
+            <p className="section-kicker">Memo 深编辑</p>
+            <h2>正在加载 Memo 详情</h2>
+            {state.error ? <p className="status-message status-message-error">{state.error}</p> : null}
+          </section>
+        )
       ) : null}
       {state.page === "capture" ? (
         <CapturePage
@@ -43,6 +54,7 @@ export default function App({ client }: { client?: ApiClient }) {
           onAddTodo={state.addDraftTodo}
           onAnalyze={state.analyzeDraft}
           onLoadDraft={state.loadRecentDraft}
+          onMoveTodo={state.moveDraftTodo}
           onPublish={state.publishDraft}
           onRemoveTodo={state.removeDraftTodo}
           onUpdateDraft={state.updateDraft}

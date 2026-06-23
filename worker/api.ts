@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { moveMemoToHistory, restoreMemoFromHistory, shouldAutoArchiveMemo, toggleTodoStatus } from "./domain/state-machines";
-import { DEFAULT_PROMPT, MemoryRepository } from "./repository/memory-repository";
+import { DEFAULT_AI_MODEL, DEFAULT_PROMPT, MemoryRepository } from "./repository/memory-repository";
 import type { AiSettings, MemoRepository } from "./repository/types";
 
 interface ApiOptions {
@@ -120,6 +120,31 @@ function parseAiJson(content: string): { title: string; todos: Array<{ title: st
   };
 }
 
+function buildAnalyzeSystemPrompt(promptTemplate: string): string {
+  return `${promptTemplate}
+
+无论用户输入什么，必须只返回一个 JSON object，不能返回 Markdown、解释或额外文字。
+JSON schema:
+{
+  "title": "string",
+  "todos": [
+    { "title": "string", "notes": "string | null" }
+  ]
+}`;
+}
+
+async function fetchAiWithRetries(createRequest: () => Request, fetchAi: (request: Request) => Promise<Response>): Promise<Response> {
+  let latestResponse: Response | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    latestResponse = await fetchAi(createRequest());
+    if (latestResponse.ok) {
+      return latestResponse;
+    }
+  }
+
+  return latestResponse ?? Response.json({ error: "AI request failed" }, { status: 502 });
+}
+
 export function createApi(options: ApiOptions = {}) {
   const repository = options.repository ?? new MemoryRepository();
   const app = new Hono();
@@ -139,6 +164,20 @@ export function createApi(options: ApiOptions = {}) {
   app.get("/api/drafts/recent", async (context) => {
     const drafts = await repository.listRecentDrafts(3);
     return context.json({ drafts });
+  });
+
+  app.patch("/api/drafts/:id", async (context) => {
+    const body = await readJson<{ title?: string; content?: string }>(context);
+    if (!body.content?.trim()) {
+      return context.json({ error: { code: "VALIDATION_FAILED", message: "请输入 Memo 内容" } }, 400);
+    }
+
+    const draft = await repository.updateDraft(context.req.param("id"), { title: body.title, content: body.content }, getNow(options));
+    if (!draft) {
+      return context.json({ error: { code: "NOT_FOUND", message: "草稿不存在" } }, 404);
+    }
+
+    return context.json({ draft });
   });
 
   app.post("/api/memos/publish", async (context) => {
@@ -349,13 +388,15 @@ export function createApi(options: ApiOptions = {}) {
 
   app.get("/api/export/json", async (context) => {
     const memos = await repository.listExportableMemos();
+    const settings = await repository.getAiSettings(getNow(options));
     return context.json({
       exportedAt: getNow(options),
       version: 1,
       memos,
       aiSettings: {
-        model: "dsv4-pro",
-        hasApiKey: false
+        baseUrl: settings.baseUrl,
+        model: settings.model,
+        hasApiKey: Boolean(settings.encryptedApiKey)
       }
     });
   });
@@ -384,7 +425,7 @@ export function createApi(options: ApiOptions = {}) {
     const settings = await repository.saveAiSettings(
       {
         baseUrl: body.baseUrl ?? "",
-        model: body.model || "dsv4-pro",
+        model: body.model || DEFAULT_AI_MODEL,
         encryptedApiKey,
         apiKeyMask,
         promptTemplate: body.promptTemplate || DEFAULT_PROMPT
@@ -440,18 +481,21 @@ export function createApi(options: ApiOptions = {}) {
 
     const apiKey = await getPlainApiKey(settings, options);
     const fetchAi = options.fetchAi ?? fetch;
-    const response = await fetchAi(
-      new Request(`${settings.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+    const response = await fetchAiWithRetries(
+      () => new Request(`${settings.baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
         headers: { "authorization": `Bearer ${apiKey}`, "content-type": "application/json" },
         body: JSON.stringify({
           model: settings.model,
           messages: [
-            { role: "system", content: settings.promptTemplate },
+            { role: "system", content: buildAnalyzeSystemPrompt(settings.promptTemplate) },
             { role: "user", content: draft.content }
-          ]
+          ],
+          response_format: { type: "json_object" },
+          max_tokens: 1200
         })
-      })
+      }),
+      fetchAi
     );
 
     if (!response.ok) {

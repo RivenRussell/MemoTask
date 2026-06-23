@@ -13,7 +13,7 @@ describe("MemoTask settings and history workflows", () => {
     await userEvent.type(screen.getByLabelText("接口地址"), "https://api.example.com/v1");
     await userEvent.clear(screen.getByLabelText("模型"));
     await userEvent.type(screen.getByLabelText("模型"), "dsv4-pro");
-    await userEvent.type(screen.getByLabelText("API 密钥"), "sk-test-1234567890abcdef");
+    await userEvent.type(screen.getByLabelText("API 密钥"), "test-key-1234567890abcdef");
     await userEvent.clear(screen.getByLabelText("Prompt"));
     await userEvent.type(screen.getByLabelText("Prompt"), "临时 Prompt");
 
@@ -57,4 +57,89 @@ describe("MemoTask settings and history workflows", () => {
     await userEvent.click(screen.getByRole("button", { name: "撤销删除" }));
     expect(await screen.findByText("部署资料")).toBeInTheDocument();
   });
+
+  it("shows settings save feedback immediately even when the server is slow", async () => {
+    window.history.pushState({}, "", "/settings");
+    render(<App client={createUiTestClient({ delayMs: 2500 })} />);
+
+    expect(await screen.findByDisplayValue("deepseek-v4-pro", undefined, { timeout: 4_000 })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText("接口地址"), "https://api.example.com/v1");
+
+    await userEvent.click(screen.getByRole("button", { name: "保存设置" }));
+    expect(screen.getByText("设置保存中")).toBeInTheDocument();
+  });
+
+  it("shows history delete feedback immediately even when the server is slow", async () => {
+    const memo = {
+      ...createMemo("history-delete-slow", "慢删除历史", []),
+      status: "history" as const,
+      historyReason: "archived" as const,
+      historyAt: "2026-06-23T09:20:00.000Z"
+    };
+    window.history.pushState({}, "", "/history");
+    render(<App client={createUiTestClient({ delayMs: 2500, initialMemos: [memo] })} />);
+
+    expect(await screen.findByText("慢删除历史", undefined, { timeout: 4_000 })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("checkbox", { name: "选择 慢删除历史" }));
+
+    await userEvent.click(screen.getByRole("button", { name: "删除所选" }));
+    expect(screen.getByText("删除中")).toBeInTheDocument();
+  });
+
+  it("shows restore feedback immediately even when the server is slow", async () => {
+    const memo = {
+      ...createMemo("history-restore-slow", "慢恢复历史", []),
+      status: "history" as const,
+      historyReason: "archived" as const,
+      historyAt: "2026-06-23T09:21:00.000Z"
+    };
+    window.history.pushState({}, "", "/history");
+    render(<App client={createUiTestClient({ delayMs: 2500, initialMemos: [memo] })} />);
+
+    expect(await screen.findByText("慢恢复历史", undefined, { timeout: 4_000 })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "恢复 慢恢复历史" }));
+    expect(screen.getByText("恢复中")).toBeInTheDocument();
+  });
+
+  it("shows undo delete feedback immediately even when the server is slow", async () => {
+    const memo = {
+      ...createMemo("history-undo-slow", "慢撤销删除", []),
+      status: "history" as const,
+      historyReason: "archived" as const,
+      historyAt: "2026-06-23T09:22:00.000Z"
+    };
+    window.history.pushState({}, "", "/history");
+    render(<App client={createUiTestClient({ delayMs: 800, initialMemos: [memo] })} />);
+
+    expect(await screen.findByText("慢撤销删除", undefined, { timeout: 4_000 })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("checkbox", { name: "选择 慢撤销删除" }));
+    await userEvent.click(screen.getByRole("button", { name: "删除所选" }));
+    expect(await screen.findByText("已删除 1 个 Memo", undefined, { timeout: 4_000 })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "撤销删除" }));
+    expect(screen.getByText("撤销中")).toBeInTheDocument();
+  });
 });
+
+function createMemo(id: string, title: string, todos: never[]) {
+  return {
+    id,
+    userId: "default",
+    title,
+    content: "用于验证慢网络下的历史操作反馈。",
+    status: "active" as const,
+    historyReason: null,
+    sortOrder: 1,
+    lastActiveSortOrder: null,
+    autoArchiveSuppressedUntilChange: false,
+    aiState: "idle" as const,
+    aiError: null,
+    createdAt: "2026-06-23T09:20:00.000Z",
+    updatedAt: "2026-06-23T09:20:00.000Z",
+    publishedAt: "2026-06-23T09:20:00.000Z",
+    historyAt: null,
+    deletedAt: null,
+    todos
+  };
+}

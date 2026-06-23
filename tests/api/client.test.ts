@@ -65,4 +65,11 @@ describe("frontend API client", () => {
 
     await expect(client.publishMemo({ title: "", content: "", todos: [] })).rejects.toThrow("请输入 Memo 内容");
   });
+
+  it("treats malformed successful API responses as request failures", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({}));
+    const client = new ApiClient(fetchMock);
+
+    await expect(client.listRecentDrafts()).rejects.toThrow("请求失败，请稍后重试");
+  });
 });
