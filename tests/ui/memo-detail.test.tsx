@@ -2,13 +2,13 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import App from "../../src/App";
-import { createUiTestClient } from "./test-client";
+import { createUiTestClient, findPrimaryNav } from "./test-client";
 import type { Memo } from "../../src/types";
 
 describe("MemoTask memo detail workflow", () => {
   it("edits a memo, manages todos, and manually archives it to History", async () => {
     render(<App client={createUiTestClient()} />);
-    const primaryNav = screen.getByRole("navigation", { name: "主导航" });
+    const primaryNav = await findPrimaryNav();
 
     await userEvent.click(within(primaryNav).getByRole("button", { name: "记录" }));
     await userEvent.type(screen.getByLabelText("原始 Memo"), "整理上线前检查");

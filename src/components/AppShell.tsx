@@ -16,12 +16,16 @@ export function AppShell({
   page,
   activePrimary,
   title,
+  userEmail,
+  onLogout,
   onNavigate,
   children
 }: {
   page: Page;
   activePrimary: PrimaryPage;
   title: string;
+  userEmail: string;
+  onLogout: () => void;
   onNavigate: (page: Page) => void;
   children: React.ReactNode;
 }) {
@@ -44,6 +48,12 @@ export function AppShell({
           </div>
         </div>
         <PrimaryNavigation activePage={activePrimary} onNavigate={onNavigate} ariaLabel="主导航" />
+        <div className="account-panel">
+          <span>{userEmail}</span>
+          <button className="secondary-action" type="button" onClick={onLogout}>
+            退出登录
+          </button>
+        </div>
       </aside>
 
       <main className="workspace-shell" ref={workspaceRef}>
@@ -63,6 +73,9 @@ export function AppShell({
               返回队列
             </button>
           ) : null}
+          <button className="icon-text-button topbar-logout" type="button" onClick={onLogout}>
+            退出当前账号
+          </button>
         </header>
 
         <section className="page-surface" aria-label={`${title}页面`}>

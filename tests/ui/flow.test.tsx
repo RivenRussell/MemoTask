@@ -2,13 +2,13 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import App from "../../src/App";
-import { createUiTestClient } from "./test-client";
+import { createUiTestClient, findPrimaryNav } from "./test-client";
 import type { Memo } from "../../src/types";
 
 describe("MemoTask frontend memo flow", () => {
   it("publishes a pure memo with manual todos and auto archives when all todos are done", async () => {
     render(<App client={createUiTestClient()} />);
-    const primaryNav = screen.getByRole("navigation", { name: "主导航" });
+    const primaryNav = await findPrimaryNav();
 
     await userEvent.click(within(primaryNav).getByRole("button", { name: "记录" }));
     await userEvent.type(screen.getByLabelText("原始 Memo"), "研究 PWA 能不能覆盖手机和 PC");
@@ -42,7 +42,7 @@ describe("MemoTask frontend memo flow", () => {
 
   it("keeps completed todo text in place without strikethrough", async () => {
     render(<App client={createUiTestClient()} />);
-    const primaryNav = screen.getByRole("navigation", { name: "主导航" });
+    const primaryNav = await findPrimaryNav();
 
     await userEvent.click(within(primaryNav).getByRole("button", { name: "记录" }));
     await userEvent.type(screen.getByLabelText("原始 Memo"), "整理设计图");
@@ -114,7 +114,7 @@ describe("MemoTask frontend memo flow", () => {
 
   it("shows publish feedback immediately even when the server is slow", async () => {
     render(<App client={createUiTestClient({ delayMs: 2500 })} />);
-    const primaryNav = screen.getByRole("navigation", { name: "主导航" });
+    const primaryNav = await findPrimaryNav();
 
     await userEvent.click(within(primaryNav).getByRole("button", { name: "记录" }));
     await userEvent.type(screen.getByLabelText("原始 Memo"), "慢网络发布内容");

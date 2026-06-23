@@ -77,3 +77,10 @@ export interface AnalyzeDraftResult {
     notes: string | null;
   }>;
 }
+
+export interface AuthUserView {
+  id: string;
+  email: string;
+  emailVerified: boolean;
+  createdAt: string;
+}

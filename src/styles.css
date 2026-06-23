@@ -88,6 +88,19 @@ button {
   gap: 12px;
 }
 
+.account-panel {
+  margin-top: auto;
+  display: grid;
+  gap: 10px;
+  color: #708088;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.account-panel .secondary-action {
+  width: 100%;
+}
+
 .nav-button {
   min-height: 54px;
   display: flex;
@@ -141,6 +154,36 @@ button {
 
 .page-surface {
   min-height: calc(100vh - 126px);
+}
+
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    linear-gradient(135deg, rgba(238, 243, 245, 0.94), rgba(226, 235, 239, 0.96)),
+    #eef3f5;
+}
+
+.auth-card {
+  width: min(100%, 460px);
+  padding: 30px;
+}
+
+.auth-card h1 {
+  margin: 8px 0 16px;
+  font-size: 32px;
+  line-height: 1.15;
+}
+
+.auth-form {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-form .primary-action {
+  margin-top: 4px;
 }
 
 .content-grid {
@@ -533,6 +576,10 @@ textarea {
     align-items: flex-start;
   }
 
+  .topbar-logout {
+    display: none;
+  }
+
   .topbar h1 {
     font-size: 34px;
   }
@@ -643,5 +690,14 @@ textarea {
     gap: 6px;
     padding: 0 8px;
     font-size: 12px;
+  }
+
+  .auth-shell {
+    align-items: start;
+    padding: 22px 18px;
+  }
+
+  .auth-card {
+    padding: 24px;
   }
 }

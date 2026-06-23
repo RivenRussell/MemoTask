@@ -1,5 +1,6 @@
 import { AppShell } from "./components/AppShell";
 import type { ApiClient } from "./api/client";
+import { AuthPage } from "./pages/AuthPage";
 import { CapturePage } from "./pages/CapturePage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { MemoDetailPage } from "./pages/MemoDetailPage";
@@ -10,8 +11,47 @@ import { useMemoTaskState } from "./state/app-state";
 export default function App({ client }: { client?: ApiClient }) {
   const state = useMemoTaskState(client);
 
+  if (state.authMode === "checking") {
+    return (
+      <main className="auth-shell">
+        <section className="soft-card auth-card">
+          <p className="section-kicker">MemoTask 账号</p>
+          <h1>检查账号状态</h1>
+        </section>
+      </main>
+    );
+  }
+
+  if (state.authMode !== "authenticated") {
+    return (
+      <AuthPage
+        canOpenTestResetLink={state.canOpenTestResetLink}
+        canOpenTestVerificationLink={state.canOpenTestVerificationLink}
+        email={state.authEmail}
+        error={state.error}
+        message={state.authMessage}
+        mode={state.authMode}
+        onForgotPassword={state.forgotPassword}
+        onLogin={state.login}
+        onOpenTestResetLink={state.openTestResetLink}
+        onOpenTestVerificationLink={state.openTestVerificationLink}
+        onRegister={state.register}
+        onResendVerification={state.resendVerification}
+        onResetPassword={state.resetPassword}
+        onSetMode={state.setAuthMode}
+      />
+    );
+  }
+
   return (
-    <AppShell page={state.page} activePrimary={state.activePrimary} title={state.title} onNavigate={state.setPage}>
+    <AppShell
+      page={state.page}
+      activePrimary={state.activePrimary}
+      title={state.title}
+      userEmail={state.authUser?.email ?? ""}
+      onLogout={() => void state.logout()}
+      onNavigate={state.setPage}
+    >
       {state.page === "memos" ? (
         <MemosPage
           memos={state.memos}

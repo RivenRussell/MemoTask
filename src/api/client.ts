@@ -1,4 +1,4 @@
-import type { AiSettingsView, AnalyzeDraftResult, DraftInput, Memo, PublishMemoInput, SyncStatusView } from "../types";
+import type { AiSettingsView, AnalyzeDraftResult, AuthUserView, DraftInput, Memo, PublishMemoInput, SyncStatusView } from "../types";
 
 interface ApiErrorBody {
   error?: {
@@ -16,6 +16,75 @@ interface AiSettingsInput {
 
 export class ApiClient {
   constructor(private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis)) {}
+
+  async getCurrentUser(): Promise<AuthUserView | null> {
+    try {
+      const body = await this.request<{ user: AuthUserView }>("/api/auth/me");
+      return body.user ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async register(input: { email: string; password: string }): Promise<AuthUserView> {
+    const body = await this.request<{ user: AuthUserView }>("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input)
+    });
+    assertPresent(body.user);
+    return body.user;
+  }
+
+  async login(input: { email: string; password: string }): Promise<AuthUserView> {
+    const body = await this.request<{ user: AuthUserView }>("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input)
+    });
+    assertPresent(body.user);
+    return body.user;
+  }
+
+  async logout(): Promise<void> {
+    await this.request<{ ok: true }>("/api/auth/logout", { method: "POST" });
+  }
+
+  async verifyEmail(token: string): Promise<AuthUserView> {
+    const body = await this.request<{ user: AuthUserView }>("/api/auth/verify-email", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token })
+    });
+    assertPresent(body.user);
+    return body.user;
+  }
+
+  async resendVerification(email: string): Promise<void> {
+    await this.request<{ ok: true }>("/api/auth/resend-verification", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email })
+    });
+  }
+
+  async forgotPassword(email: string): Promise<void> {
+    await this.request<{ ok: true }>("/api/auth/forgot-password", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email })
+    });
+  }
+
+  async resetPassword(input: { token: string; password: string }): Promise<AuthUserView> {
+    const body = await this.request<{ user: AuthUserView }>("/api/auth/reset-password", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input)
+    });
+    assertPresent(body.user);
+    return body.user;
+  }
 
   async listMemos(): Promise<Memo[]> {
     const body = await this.request<{ memos: Memo[] }>("/api/memos");

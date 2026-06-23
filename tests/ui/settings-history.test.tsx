@@ -2,12 +2,12 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import App from "../../src/App";
-import { createUiTestClient } from "./test-client";
+import { createUiTestClient, findPrimaryNav } from "./test-client";
 
 describe("MemoTask settings and history workflows", () => {
   it("saves AI settings, tests connection, restores prompt, and exports JSON without showing plaintext key", async () => {
     render(<App client={createUiTestClient(async () => Response.json({ choices: [{ message: { content: "ok" } }] }))} />);
-    const primaryNav = screen.getByRole("navigation", { name: "主导航" });
+    const primaryNav = await findPrimaryNav();
 
     await userEvent.click(within(primaryNav).getByRole("button", { name: "设置" }));
     await userEvent.type(screen.getByLabelText("接口地址"), "https://api.example.com/v1");
@@ -33,7 +33,7 @@ describe("MemoTask settings and history workflows", () => {
 
   it("searches history, bulk deletes a memo, and restores it with undo", async () => {
     render(<App client={createUiTestClient()} />);
-    const primaryNav = screen.getByRole("navigation", { name: "主导航" });
+    const primaryNav = await findPrimaryNav();
 
     await userEvent.click(within(primaryNav).getByRole("button", { name: "记录" }));
     await userEvent.type(screen.getByLabelText("原始 Memo"), "包含 Cloudflare 部署步骤");

@@ -2,12 +2,12 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import App from "../../src/App";
-import { createUiTestClient } from "./test-client";
+import { createUiTestClient, findPrimaryNav } from "./test-client";
 
 describe("MemoTask memo reorder workflow", () => {
   it("moves memos in the priority queue and keeps the order after navigation refresh", async () => {
     render(<App client={createUiTestClient()} />);
-    const primaryNav = screen.getByRole("navigation", { name: "主导航" });
+    const primaryNav = await findPrimaryNav();
 
     await publishMemo(primaryNav, "低优先 Memo", "稍后处理", "稍后确认");
     await publishMemo(primaryNav, "高优先 Memo", "马上处理", "马上确认");

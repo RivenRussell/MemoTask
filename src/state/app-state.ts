@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { ApiClient, apiClient } from "../api/client";
-import type { AiSettingsView, DraftTodoInput, Memo, PublishMemoInput, SyncStatusView } from "../types";
+import type { AiSettingsView, AuthUserView, DraftTodoInput, Memo, PublishMemoInput, SyncStatusView } from "../types";
 
 export type Page = "capture" | "memos" | "memoDetail" | "settings" | "history";
 export type PrimaryPage = "capture" | "memos" | "settings";
+export type AuthMode = "checking" | "login" | "register" | "forgot" | "reset" | "unverified" | "authenticated";
 
 interface RouteState {
   page: Page;
@@ -24,6 +25,12 @@ export interface AiSettingsDraft {
 }
 
 export interface AppState {
+  authMode: AuthMode;
+  authUser: AuthUserView | null;
+  authEmail: string;
+  authMessage: string | null;
+  canOpenTestVerificationLink: boolean;
+  canOpenTestResetLink: boolean;
   page: Page;
   activePrimary: PrimaryPage;
   title: string;
@@ -44,6 +51,15 @@ export interface AppState {
   canUndoHistoryDelete: boolean;
   isLoading: boolean;
   error: string | null;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  register: (email: string, password: string) => Promise<void>;
+  forgotPassword: (email: string) => Promise<void>;
+  resetPassword: (password: string) => Promise<void>;
+  resendVerification: () => Promise<void>;
+  openTestVerificationLink: () => void;
+  openTestResetLink: () => void;
+  setAuthMode: (mode: AuthMode) => void;
   setPage: (page: Page) => void;
   openMemoDetail: (memoId: string) => void;
   updateDraft: (patch: Partial<DraftState>) => void;
@@ -109,6 +125,12 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   const [historyMessage, setHistoryMessage] = useState<string | null>(null);
   const [detailMessage, setDetailMessage] = useState<string | null>(null);
   const [lastHistoryDeleteOperationId, setLastHistoryDeleteOperationId] = useState<string | null>(null);
+  const [authMode, setAuthModeState] = useState<AuthMode>(() => (window.location.pathname === "/reset-password" ? "reset" : "checking"));
+  const [authUser, setAuthUser] = useState<AuthUserView | null>(null);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [verificationToken, setVerificationToken] = useState("");
+  const [resetToken, setResetToken] = useState(new URLSearchParams(window.location.search).get("token") ?? "");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const activePrimary = page === "history" || page === "memoDetail" ? "memos" : page;
@@ -118,7 +140,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     if (window.location.pathname === "/") {
       window.history.replaceState({}, "", "/memos");
     }
-    void refreshMemos();
+    void checkAuth();
   }, []);
 
   useEffect(() => {
@@ -132,6 +154,9 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   }, [memos]);
 
   useEffect(() => {
+    if (authMode !== "authenticated") {
+      return;
+    }
     if (page === "capture") {
       void refreshDrafts();
     }
@@ -141,16 +166,16 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     if (page === "settings") {
       void refreshSettings();
     }
-  }, [page]);
+  }, [page, authMode]);
 
   useEffect(() => {
-    if (page === "memoDetail" && routeMemoId) {
+    if (authMode === "authenticated" && page === "memoDetail" && routeMemoId) {
       void loadMemoDetail(routeMemoId);
     }
-  }, [page, routeMemoId]);
+  }, [page, routeMemoId, authMode]);
 
   useEffect(() => {
-    if (page !== "capture" || !draft.content.trim()) {
+    if (authMode !== "authenticated" || page !== "capture" || !draft.content.trim()) {
       return;
     }
 
@@ -160,7 +185,126 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     }, 1000);
 
     return () => window.clearTimeout(timeout);
-  }, [page, draft.title, draft.content]);
+  }, [authMode, page, draft.title, draft.content]);
+
+  async function checkAuth() {
+    await run(async () => {
+      const user = await client.getCurrentUser();
+      setAuthUser(user);
+      if (!user) {
+        setAuthModeState(window.location.pathname === "/reset-password" ? "reset" : "login");
+        return;
+      }
+      setAuthEmail(user.email);
+      if (!user.emailVerified) {
+        setAuthModeState("unverified");
+        return;
+      }
+      setAuthModeState("authenticated");
+      await refreshMemos();
+    });
+  }
+
+  async function login(email: string, password: string) {
+    await run(async () => {
+      const user = await client.login({ email, password });
+      setAuthUser(user);
+      setAuthEmail(user.email);
+      setAuthMessage(null);
+      setAuthModeState(user.emailVerified ? "authenticated" : "unverified");
+      if (user.emailVerified) {
+        await refreshMemos();
+      }
+    });
+  }
+
+  async function register(email: string, password: string) {
+    await run(async () => {
+      const user = await client.register({ email, password });
+      setAuthUser(user);
+      setAuthEmail(user.email);
+      setAuthMessage("验证邮件已发送");
+      setVerificationToken(readTestToken("getLatestVerificationToken"));
+      setAuthModeState(user.emailVerified ? "authenticated" : "unverified");
+    });
+  }
+
+  async function logout() {
+    await run(async () => {
+      await client.logout();
+      setAuthUser(null);
+      setAuthEmail("");
+      setVerificationToken("");
+      setResetToken("");
+      setMemos([]);
+      setActiveMemo(null);
+      setAuthMessage(null);
+      setAuthModeState("login");
+    });
+  }
+
+  async function forgotPassword(email: string) {
+    await run(async () => {
+      await client.forgotPassword(email);
+      setAuthEmail(email);
+      setAuthMessage("如果邮箱存在，重置链接已经发送");
+      setResetToken(readTestToken("getLatestResetToken"));
+    });
+  }
+
+  async function resetPassword(password: string) {
+    await run(async () => {
+      const user = await client.resetPassword({ token: resetToken, password });
+      setAuthUser(user);
+      setAuthEmail(user.email);
+      setAuthMessage(null);
+      setAuthModeState("authenticated");
+      applyRoute({ page: "memos", memoId: null }, true);
+      await refreshMemos();
+    });
+  }
+
+  async function resendVerification() {
+    await run(async () => {
+      await client.resendVerification(authEmail);
+      setVerificationToken(readTestToken("getLatestVerificationToken"));
+      setAuthMessage("验证邮件已重新发送");
+    });
+  }
+
+  function openTestVerificationLink() {
+    if (!verificationToken) {
+      return;
+    }
+    void run(async () => {
+      const user = await client.verifyEmail(verificationToken);
+      setAuthUser(user);
+      setAuthEmail(user.email);
+      setAuthMessage(null);
+      setAuthModeState("authenticated");
+      applyRoute({ page: "memos", memoId: null }, true);
+      await refreshMemos();
+    });
+  }
+
+  function openTestResetLink() {
+    if (!resetToken) {
+      return;
+    }
+    window.history.pushState({}, "", `/reset-password?token=${encodeURIComponent(resetToken)}`);
+    setAuthModeState("reset");
+  }
+
+  function setAuthMode(mode: AuthMode) {
+    setAuthMessage(null);
+    setError(null);
+    setAuthModeState(mode);
+  }
+
+  function readTestToken(methodName: "getLatestVerificationToken" | "getLatestResetToken"): string {
+    const candidate = client as ApiClient & Partial<Record<typeof methodName, () => string>>;
+    return candidate[methodName]?.() ?? "";
+  }
 
   async function run(action: () => Promise<void>) {
     setError(null);
@@ -650,6 +794,12 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   }
 
   return {
+    authMode,
+    authUser,
+    authEmail,
+    authMessage,
+    canOpenTestVerificationLink: Boolean(verificationToken),
+    canOpenTestResetLink: Boolean(resetToken),
     page,
     activePrimary,
     title,
@@ -670,6 +820,15 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     canUndoHistoryDelete: Boolean(lastHistoryDeleteOperationId),
     isLoading,
     error,
+    login,
+    logout,
+    register,
+    forgotPassword,
+    resetPassword,
+    resendVerification,
+    openTestVerificationLink,
+    openTestResetLink,
+    setAuthMode,
     setPage,
     openMemoDetail,
     updateDraft,

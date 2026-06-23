@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import App from "../../src/App";
-import { createUiTestClient } from "./test-client";
+import { createUiTestClient, findPrimaryNav } from "./test-client";
 
 describe("MemoTask capture draft and AI workflow", () => {
   it("auto saves a draft, reloads it from recent drafts, and applies Analyze results before publishing", async () => {
@@ -24,7 +24,7 @@ describe("MemoTask capture draft and AI workflow", () => {
         )}
       />
     );
-    const primaryNav = screen.getByRole("navigation", { name: "主导航" });
+    const primaryNav = await findPrimaryNav();
 
     await userEvent.click(within(primaryNav).getByRole("button", { name: "设置" }));
     await userEvent.type(screen.getByLabelText("接口地址"), "https://api.example.com/v1");
@@ -34,7 +34,7 @@ describe("MemoTask capture draft and AI workflow", () => {
 
     await userEvent.click(within(primaryNav).getByRole("button", { name: "记录" }));
     await userEvent.type(screen.getByLabelText("原始 Memo"), "研究 PWA 能不能覆盖手机和 PC");
-    expect(await screen.findByText("草稿已保存")).toBeInTheDocument();
+    expect(await screen.findByText("草稿已保存", undefined, { timeout: 3_000 })).toBeInTheDocument();
 
     await userEvent.clear(screen.getByLabelText("原始 Memo"));
     await userEvent.click(screen.getByRole("button", { name: "载入草稿：未命名 Memo" }));
