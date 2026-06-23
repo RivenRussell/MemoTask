@@ -1,0 +1,158 @@
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it } from "vitest";
+import App from "../../src/App";
+import { createUiTestClient } from "./test-client";
+import type { Memo } from "../../src/types";
+
+describe("MemoTask memo detail workflow", () => {
+  it("edits a memo, manages todos, and manually archives it to History", async () => {
+    render(<App client={createUiTestClient()} />);
+    const primaryNav = screen.getByRole("navigation", { name: "主导航" });
+
+    await userEvent.click(within(primaryNav).getByRole("button", { name: "记录" }));
+    await userEvent.type(screen.getByLabelText("原始 Memo"), "整理上线前检查");
+    await userEvent.type(screen.getByLabelText("Memo 标题"), "上线检查");
+    await userEvent.type(screen.getByLabelText("新增 Todo"), "检查 Worker 健康");
+    await userEvent.click(screen.getByRole("button", { name: "添加 Todo" }));
+    await userEvent.click(screen.getByRole("button", { name: "发布" }));
+    expect(await screen.findByText("上线检查")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "打开 上线检查" }));
+    expect(screen.getByRole("heading", { name: "Memo 详情" })).toBeInTheDocument();
+
+    await userEvent.clear(screen.getByLabelText("详情标题"));
+    await userEvent.type(screen.getByLabelText("详情标题"), "上线前检查");
+    await userEvent.clear(screen.getByLabelText("详情原文"));
+    await userEvent.type(screen.getByLabelText("详情原文"), "确认 Cloudflare 部署和访问控制");
+    await userEvent.click(screen.getByRole("button", { name: "保存 Memo" }));
+    expect(await screen.findByText("Memo 已保存")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("详情新增 Todo"), "确认 Access 规则");
+    await userEvent.click(screen.getByRole("button", { name: "新增 Todo" }));
+    expect(await screen.findByDisplayValue("确认 Access 规则")).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText("详情新增 Todo"), "保留未完成项");
+    await userEvent.click(screen.getByRole("button", { name: "新增 Todo" }));
+    expect(await screen.findByDisplayValue("保留未完成项")).toBeInTheDocument();
+
+    await userEvent.clear(screen.getByLabelText("编辑 确认 Access 规则"));
+    await userEvent.type(screen.getByLabelText("编辑 确认 Access 规则"), "确认 Access 保护");
+    await userEvent.tab();
+    expect(await screen.findByDisplayValue("确认 Access 保护")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "删除 检查 Worker 健康" }));
+    expect(screen.queryByText("检查 Worker 健康")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "确认 Access 保护" }));
+    expect(screen.getByDisplayValue("确认 Access 保护").closest("li")).toHaveClass("is-done");
+
+    await userEvent.click(screen.getByRole("button", { name: "手动归档" }));
+    expect(await screen.findByText("上线前检查")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "历史" })).toBeInTheDocument();
+  });
+
+  it("shows detail todo changes immediately even when the server is slow", async () => {
+    window.history.pushState({}, "", "/memos");
+    render(
+      <App
+        client={createUiTestClient({
+          delayMs: 2500,
+          initialMemos: [
+            createMemo("memo-detail-slow", "慢详情 Memo", [
+              createTodo("todo-delete-slow", "马上消失", "memo-detail-slow")
+            ])
+          ]
+        })}
+      />
+    );
+
+    expect(await screen.findByText("慢详情 Memo", undefined, { timeout: 4_000 })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "打开 慢详情 Memo" }));
+    expect(await screen.findByDisplayValue("马上消失", undefined, { timeout: 4_000 })).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("详情新增 Todo"), "马上出现");
+    await userEvent.click(screen.getByRole("button", { name: "新增 Todo" }));
+    expect(screen.getByDisplayValue("马上出现")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "删除 马上消失" }));
+    expect(screen.queryByDisplayValue("马上消失")).not.toBeInTheDocument();
+  });
+
+  it("shows memo save feedback immediately even when the server is slow", async () => {
+    window.history.pushState({}, "", "/memos");
+    render(
+      <App
+        client={createUiTestClient({
+          delayMs: 2500,
+          initialMemos: [createMemo("memo-save-slow", "慢保存 Memo", [])]
+        })}
+      />
+    );
+
+    expect(await screen.findByText("慢保存 Memo", undefined, { timeout: 4_000 })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "打开 慢保存 Memo" }));
+    expect(await screen.findByDisplayValue("慢保存 Memo", undefined, { timeout: 4_000 })).toBeInTheDocument();
+    await userEvent.clear(screen.getByLabelText("详情标题"));
+    await userEvent.type(screen.getByLabelText("详情标题"), "慢保存 Memo 已改");
+
+    await userEvent.click(screen.getByRole("button", { name: "保存 Memo" }));
+    expect(screen.getByText("Memo 保存中")).toBeInTheDocument();
+  });
+
+  it("shows archive feedback immediately even when the server is slow", async () => {
+    window.history.pushState({}, "", "/memos");
+    render(
+      <App
+        client={createUiTestClient({
+          delayMs: 2500,
+          initialMemos: [createMemo("memo-archive-slow", "慢归档 Memo", [])]
+        })}
+      />
+    );
+
+    expect(await screen.findByText("慢归档 Memo", undefined, { timeout: 4_000 })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "打开 慢归档 Memo" }));
+    expect(await screen.findByDisplayValue("慢归档 Memo", undefined, { timeout: 4_000 })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "手动归档" }));
+    expect(screen.getByText("归档中")).toBeInTheDocument();
+  });
+});
+
+function createMemo(id: string, title: string, todos: Memo["todos"]): Memo {
+  return {
+    id,
+    userId: "default",
+    title,
+    content: "用于验证慢网络下详情页操作反馈。",
+    status: "active",
+    historyReason: null,
+    sortOrder: 1,
+    lastActiveSortOrder: null,
+    autoArchiveSuppressedUntilChange: false,
+    aiState: "idle",
+    aiError: null,
+    createdAt: "2026-06-23T08:55:00.000Z",
+    updatedAt: "2026-06-23T08:55:00.000Z",
+    publishedAt: "2026-06-23T08:55:00.000Z",
+    historyAt: null,
+    deletedAt: null,
+    todos
+  };
+}
+
+function createTodo(id: string, title: string, memoId: string): Memo["todos"][number] {
+  return {
+    id,
+    memoId,
+    title,
+    notes: null,
+    status: "todo",
+    sortOrder: 1,
+    generatedByAi: false,
+    createdAt: "2026-06-23T08:55:00.000Z",
+    updatedAt: "2026-06-23T08:55:00.000Z",
+    completedAt: null,
+    deletedAt: null
+  };
+}
