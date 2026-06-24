@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Sparkles, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { DraftState } from "../state/app-state";
 import type { Memo } from "../types";
@@ -39,30 +39,42 @@ export function CapturePage({
 
   return (
     <div className="capture-layout">
-      <section className="soft-card capture-editor">
-        <p className="section-kicker">写下原始想法</p>
-        <label htmlFor="raw-memo">原始 Memo</label>
+      <section className="soft-card capture-editor paper-editor">
+        <img className="capture-glow-asset" src="/assets/ui/top-breathing-glow.png" alt="" aria-hidden="true" />
+        <label className="sr-only" htmlFor="memo-title">
+          Memo 标题
+        </label>
+        <input
+          id="memo-title"
+          className="paper-title-input"
+          placeholder="未命名 Memo"
+          value={draft.title}
+          onChange={(event) => onUpdateDraft({ title: event.target.value })}
+        />
+        <label className="sr-only" htmlFor="raw-memo">
+          原始 Memo
+        </label>
         <textarea
           id="raw-memo"
-          placeholder="例如：研究 PWA 能不能覆盖手机和 PC，然后整理实现方案。"
+          className="paper-body-input"
+          placeholder="随时记录..."
           value={draft.content}
           onChange={(event) => onUpdateDraft({ content: event.target.value })}
         />
-        <label htmlFor="memo-title">Memo 标题</label>
-        <input id="memo-title" value={draft.title} onChange={(event) => onUpdateDraft({ title: event.target.value })} />
-        {message ? <p className="status-message">{message}</p> : null}
-        {error ? <p className="inline-error">{error}</p> : null}
-        <div className="inline-actions">
-          <button className="primary-action" type="button" onClick={() => void onAnalyze()}>
-            {isAnalyzing ? "整理中" : "整理"}
-          </button>
+        <button className="ai-floating-action" type="button" onClick={() => void onAnalyze()}>
+          <img src="/assets/ui/ai-magic-orb.png" alt="" aria-hidden="true" />
+          <span>{isAnalyzing ? "整理中" : "整理"}</span>
+          <Sparkles size={15} aria-hidden="true" />
+        </button>
+        <div className="capture-footer">
+          {message ? <p className="status-message">{message}</p> : <span aria-hidden="true" />}
+          {error ? <p className="status-message status-message-error">{error}</p> : null}
           <button className="secondary-action" type="button" onClick={() => void onPublish()}>
             发布
           </button>
         </div>
         {recentDrafts.length > 0 ? (
           <div className="recent-drafts">
-            <p className="section-kicker">最近草稿</p>
             {recentDrafts.map((recentDraft) => (
               <button
                 className="secondary-action"
@@ -77,19 +89,18 @@ export function CapturePage({
           </div>
         ) : null}
       </section>
-      <section className="soft-card draft-card">
-        <p className="section-kicker">Todo 草稿</p>
-        <h2>AI 结果发布前可编辑</h2>
-        <p>智能整理只在这里触发。发布后不会重新生成，也不会改变 Memo 排序。</p>
-        <label htmlFor="new-todo">新增 Todo</label>
+      <section className="soft-card draft-card draft-list-panel">
+        <label className="sr-only" htmlFor="new-todo">
+          新增 Todo
+        </label>
         <div className="todo-draft-row">
-          <input id="new-todo" value={newTodo} onChange={(event) => setNewTodo(event.target.value)} />
-          <button className="secondary-action" type="button" onClick={addTodo}>
-            添加 Todo
+          <input id="new-todo" placeholder="添加一条 Todo" value={newTodo} onChange={(event) => setNewTodo(event.target.value)} />
+          <button className="secondary-action" type="button" aria-label="添加 Todo" onClick={addTodo}>
+            添加
           </button>
         </div>
         {draft.todos.length > 0 ? (
-          <ul className="todo-list">
+          <ul className="todo-list draft-todo-list">
             {draft.todos.map((todo, index) => (
               <li key={`${todo.title}-${index}`}>
                 <span>{todo.title}</span>
@@ -111,14 +122,22 @@ export function CapturePage({
                 >
                   <ArrowDown size={14} />
                 </button>
-                <button className="text-action" type="button" aria-label={`删除草稿 Todo ${todo.title}`} onClick={() => onRemoveTodo(index)}>
+                <button
+                  className="text-action draft-delete-action"
+                  type="button"
+                  aria-label={`删除草稿 Todo ${todo.title}`}
+                  onClick={() => onRemoveTodo(index)}
+                >
                   <Trash2 size={15} />
-                  删除
                 </button>
               </li>
             ))}
           </ul>
-        ) : null}
+        ) : (
+          <div className="draft-empty-state">
+            <img src="/assets/ui/empty-memos-cloud.png" alt="" aria-hidden="true" />
+          </div>
+        )}
       </section>
     </div>
   );

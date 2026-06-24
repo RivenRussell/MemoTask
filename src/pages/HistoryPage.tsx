@@ -1,4 +1,4 @@
-import { Archive, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { useState } from "react";
 import type { Memo } from "../types";
 
@@ -39,10 +39,9 @@ export function HistoryPage({
   return (
     <div className="content-grid">
       {memos.length === 0 ? (
-        <section className="soft-card intro-card">
-          <p className="section-kicker">完整 Memo 历史</p>
+        <section className="soft-card intro-card empty-history-card">
+          <img src="/assets/ui/empty-history-hourglass.png" alt="" aria-hidden="true" />
           <h2>还没有历史 Memo</h2>
-          <p>完成归档和手动归档都会保存完整 Memo。这里支持搜索、恢复、批量软删除和短时间撤销。</p>
         </section>
       ) : (
         memos.map((memo) => (
@@ -55,7 +54,6 @@ export function HistoryPage({
                 type="checkbox"
                 onChange={() => toggleSelection(memo.id)}
               />
-              <Archive size={20} />
               <h2>{memo.title}</h2>
             </div>
             <p className="memo-content">{memo.content}</p>

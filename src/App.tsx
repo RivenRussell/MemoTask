@@ -79,7 +79,6 @@ export default function App({ client }: { client?: ApiClient }) {
           />
         ) : (
           <section className="soft-card intro-card">
-            <p className="section-kicker">Memo 深编辑</p>
             <h2>正在加载 Memo 详情</h2>
             {state.error ? <p className="status-message status-message-error">{state.error}</p> : null}
           </section>

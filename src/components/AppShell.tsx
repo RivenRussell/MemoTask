@@ -39,12 +39,13 @@ export function AppShell({
 
   return (
     <div className="app-frame">
+      <div className="decoration-bg-left" aria-hidden="true" />
+      <div className="decoration-bg-right" aria-hidden="true" />
       <aside className="desktop-sidebar" aria-label="桌面导航">
         <div className="brand-mark">
           <div className="brand-icon">M</div>
           <div>
             <p>MemoTask</p>
-            <span>低压力 Memo 队列</span>
           </div>
         </div>
         <PrimaryNavigation activePage={activePrimary} onNavigate={onNavigate} ariaLabel="主导航" />
@@ -59,7 +60,6 @@ export function AppShell({
       <main className="workspace-shell" ref={workspaceRef}>
         <header className="topbar">
           <div>
-            <p className="section-kicker">Memo 容器 · 顺序即优先级</p>
             <h1>{title}</h1>
           </div>
           {page === "memos" ? (

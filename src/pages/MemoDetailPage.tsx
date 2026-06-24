@@ -1,7 +1,7 @@
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Archive, ArrowLeft, CheckCircle2, GripVertical, Plus, Save, Trash2 } from "lucide-react";
+import { Archive, ArrowLeft, CheckCircle2, GripVertical, Save, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { Memo, MemoTodo } from "../types";
 
@@ -67,7 +67,6 @@ export function MemoDetailPage({
       <section className="soft-card draft-card memo-detail-todos">
         <div className="todo-panel-heading">
           <div>
-            <p className="section-kicker">Todo</p>
             <h2>Todo 管理</h2>
           </div>
           <span className="todo-count-pill">
@@ -75,12 +74,18 @@ export function MemoDetailPage({
             {completedTodoCount}/{memo.todos.length}
           </span>
         </div>
-        <label htmlFor="detail-new-todo">详情新增 Todo</label>
+        <label className="sr-only" htmlFor="detail-new-todo">
+          详情新增 Todo
+        </label>
         <div className="todo-draft-row">
-          <input id="detail-new-todo" value={newTodo} onChange={(event) => setNewTodo(event.target.value)} />
-          <button className="secondary-action" type="button" onClick={createTodo}>
-            <Plus size={16} />
-            新增 Todo
+          <input
+            id="detail-new-todo"
+            placeholder="添加一条 Todo"
+            value={newTodo}
+            onChange={(event) => setNewTodo(event.target.value)}
+          />
+          <button className="secondary-action" type="button" aria-label="新增 Todo" onClick={createTodo}>
+            添加
           </button>
         </div>
         <DndContext collisionDetection={closestCenter} sensors={sensors} onDragEnd={handleTodoDragEnd}>
@@ -100,12 +105,20 @@ export function MemoDetailPage({
         </DndContext>
       </section>
 
-      <section className="soft-card capture-editor memo-detail-editor">
-        <p className="section-kicker">Memo 深编辑</p>
-        <label htmlFor="detail-title">详情标题</label>
-        <input id="detail-title" value={title} onChange={(event) => setTitle(event.target.value)} />
-        <label htmlFor="detail-content">详情原文</label>
-        <textarea id="detail-content" value={content} onChange={(event) => setContent(event.target.value)} />
+      <section className="soft-card capture-editor paper-editor memo-detail-editor">
+        <label className="sr-only" htmlFor="detail-title">
+          详情标题
+        </label>
+        <input id="detail-title" className="paper-title-input" value={title} onChange={(event) => setTitle(event.target.value)} />
+        <label className="sr-only" htmlFor="detail-content">
+          详情原文
+        </label>
+        <textarea
+          id="detail-content"
+          className="paper-body-input"
+          value={content}
+          onChange={(event) => setContent(event.target.value)}
+        />
         {message ? <p className="status-message">{message}</p> : null}
         {error ? <p className="status-message status-message-error">{error}</p> : null}
         <div className="inline-actions memo-detail-actions">

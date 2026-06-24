@@ -15,8 +15,8 @@ describe("MemoTask app shell", () => {
 
     expect(await screen.findByRole("heading", { name: "队列" })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/memos");
-    expect(await screen.findByText("当前 Memo 队列")).toBeInTheDocument();
     expect(screen.getByText("还没有 Memo")).toBeInTheDocument();
+    expect(screen.queryByText("当前 Memo 队列")).not.toBeInTheDocument();
     expect(screen.queryByText("Memo 卡片预览")).not.toBeInTheDocument();
     expect(screen.queryByText("Today")).not.toBeInTheDocument();
     expect(screen.queryByText("Upcoming")).not.toBeInTheDocument();
@@ -39,7 +39,8 @@ describe("MemoTask app shell", () => {
     await userEvent.click(await screen.findByRole("button", { name: "打开历史" }));
 
     expect(await screen.findByRole("heading", { name: "历史" })).toBeInTheDocument();
-    expect(screen.getByText("完整 Memo 历史")).toBeInTheDocument();
+    expect(screen.getByText("还没有历史 Memo")).toBeInTheDocument();
+    expect(screen.queryByText("完整 Memo 历史")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "返回队列" })).toBeInTheDocument();
   });
 
@@ -49,7 +50,8 @@ describe("MemoTask app shell", () => {
 
     await userEvent.click(within(primaryNav).getByRole("button", { name: "记录" }));
     expect(screen.getByRole("heading", { name: "记录" })).toBeInTheDocument();
-    expect(screen.getByText("写下原始想法")).toBeInTheDocument();
+    expect(screen.getByLabelText("原始 Memo")).toBeInTheDocument();
+    expect(screen.queryByText("写下原始想法")).not.toBeInTheDocument();
 
     await userEvent.click(within(primaryNav).getByRole("button", { name: "设置" }));
     expect(screen.getByRole("heading", { name: "设置" })).toBeInTheDocument();

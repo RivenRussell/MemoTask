@@ -3,6 +3,10 @@ import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { moveMemoToHistory } from "../../worker/domain/state-machines";
 import { createApi } from "../../worker/api";
+import { createSessionCookie, hashPassword, hashToken } from "../../worker/auth/crypto";
+import { MemoryAuthRepository } from "../../worker/auth/memory-auth-repository";
+import { AuthService } from "../../worker/auth/service";
+import type { EmailMessage, EmailSender } from "../../worker/auth/types";
 import { MemoryRepository } from "../../worker/repository/memory-repository";
 import type { MemoRepository } from "../../worker/repository/types";
 
@@ -27,7 +31,7 @@ const pageSpecs: PageSpec[] = [
     path: "/capture",
     label: "capture",
     heading: "记录",
-    requiredTexts: ["写下原始想法", "Todo 草稿", "最近草稿", "视觉验收草稿"]
+    requiredTexts: ["视觉验收草稿"]
   },
   {
     path: "/settings",
@@ -39,37 +43,14 @@ const pageSpecs: PageSpec[] = [
     path: "/history",
     label: "history",
     heading: "历史",
-    requiredTexts: ["已归档验收 Memo", "恢复", "搜索历史", "归档后保存完整 Memo"]
+    requiredTexts: ["已归档验收 Memo", "恢复", "搜索历史"]
   }
 ];
 
 test.beforeEach(async ({ page }) => {
   const repository = new MemoryRepository();
   await seedVisualQaData(repository);
-  const app = createApi({
-    repository,
-    now: () => "2026-06-22T12:30:00.000Z",
-    appEncryptionKey: "test-encryption-key-for-visual-qa"
-  });
-
-  await page.route("**/*", async (route) => {
-    const request = route.request();
-    if (!new URL(request.url()).pathname.startsWith("/api/")) {
-      await route.continue();
-      return;
-    }
-
-    const response = await app.request(request.url(), {
-      method: request.method(),
-      headers: await request.allHeaders(),
-      body: request.postData() ?? undefined
-    });
-    await route.fulfill({
-      status: response.status,
-      headers: Object.fromEntries(response.headers),
-      body: await response.text()
-    });
-  });
+  await routeAuthenticatedApi(page, repository, "test-encryption-key-for-visual-qa");
 });
 
 for (const spec of pageSpecs) {
@@ -122,31 +103,9 @@ test("visual QA keeps memo detail readable on Android", async ({ page }, testInf
 
 test("visual QA keeps the empty queue focused", async ({ page }) => {
   const repository = new MemoryRepository();
-  const app = createApi({
-    repository,
-    now: () => "2026-06-22T12:30:00.000Z",
-    appEncryptionKey: "test-encryption-key-for-empty-visual-qa"
-  });
 
   await page.unroute("**/*");
-  await page.route("**/*", async (route) => {
-    const request = route.request();
-    if (!new URL(request.url()).pathname.startsWith("/api/")) {
-      await route.continue();
-      return;
-    }
-
-    const response = await app.request(request.url(), {
-      method: request.method(),
-      headers: await request.allHeaders(),
-      body: request.postData() ?? undefined
-    });
-    await route.fulfill({
-      status: response.status,
-      headers: Object.fromEntries(response.headers),
-      body: await response.text()
-    });
-  });
+  await routeAuthenticatedApi(page, repository, "test-encryption-key-for-empty-visual-qa");
 
   await page.goto("/memos");
   await expect(page.getByText("还没有 Memo")).toBeVisible();
@@ -227,6 +186,72 @@ async function seedVisualQaData(repository: MemoRepository) {
   );
 }
 
+async function routeAuthenticatedApi(page: Page, repository: MemoRepository, appEncryptionKey: string) {
+  const authRepository = new MemoryAuthRepository();
+  const sessionToken = "visual-qa-session-token";
+  await seedDefaultSession(authRepository, sessionToken);
+  const authService = new AuthService({
+    repository: authRepository,
+    emailSender: new RecordingEmailSender(),
+    appBaseUrl: "https://memotask.example.com"
+  });
+  const app = createApi({
+    repository,
+    authService,
+    now: () => "2026-06-22T12:30:00.000Z",
+    appEncryptionKey
+  });
+  const cookie = createSessionCookie(sessionToken, "2099-01-01T00:00:00.000Z").split(";")[0];
+
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    if (!new URL(request.url()).pathname.startsWith("/api/")) {
+      await route.continue();
+      return;
+    }
+
+    const headers = new Headers(await request.allHeaders());
+    headers.set("cookie", cookie);
+    const response = await app.request(request.url(), {
+      method: request.method(),
+      headers,
+      body: request.postData() ?? undefined
+    });
+    await route.fulfill({
+      status: response.status,
+      headers: Object.fromEntries(response.headers),
+      body: await response.text()
+    });
+  });
+}
+
+async function seedDefaultSession(authRepository: MemoryAuthRepository, sessionToken: string): Promise<void> {
+  await authRepository.createUser({
+    id: "default",
+    email: "local@memotask.test",
+    passwordHash: await hashPassword("memo123"),
+    emailVerifiedAt: "2026-06-22T12:00:00.000Z",
+    createdAt: "2026-06-22T12:00:00.000Z",
+    updatedAt: "2026-06-22T12:00:00.000Z"
+  });
+  await authRepository.createSession({
+    id: "session-default",
+    userId: "default",
+    tokenHash: await hashToken(sessionToken),
+    expiresAt: "2099-01-01T00:00:00.000Z",
+    createdAt: "2026-06-22T12:00:00.000Z",
+    lastSeenAt: "2026-06-22T12:00:00.000Z"
+  });
+}
+
+class RecordingEmailSender implements EmailSender {
+  public messages: EmailMessage[] = [];
+
+  async send(message: EmailMessage): Promise<void> {
+    this.messages.push(message);
+  }
+}
+
 async function assertVisualIntegrity(page: Page) {
   const result = await page.evaluate(() => {
     const visible = (element: Element) => {
@@ -255,6 +280,9 @@ async function assertVisualIntegrity(page: Page) {
 
     const mobileNav = document.querySelector(".mobile-bottom-nav");
     const mobileNavRect = mobileNav && visible(mobileNav) ? mobileNav.getBoundingClientRect() : null;
+    const workspace = document.querySelector(".workspace-shell");
+    const workspacePaddingBottom = workspace ? Number.parseFloat(window.getComputedStyle(workspace).paddingBottom) : 0;
+    const mobileNavClearance = mobileNavRect ? Math.round(workspacePaddingBottom - mobileNavRect.height) : null;
     const overlaps = (left: DOMRectReadOnly, right: DOMRectReadOnly) =>
       left.left < right.right && left.right > right.left && left.top < right.bottom && left.bottom > right.top;
     const viewportRect = new DOMRect(0, 0, window.innerWidth, window.innerHeight);
@@ -296,18 +324,22 @@ async function assertVisualIntegrity(page: Page) {
       overflowingButtons,
       doneTextDecorations,
       mobileNavOverlaps,
+      mobileNavClearance,
       oversizedCheckboxVisuals
     };
   });
 
-  expect(result.bodyTextLength).toBeGreaterThan(60);
-  expect(result.backgroundColor).toBe("rgb(238, 243, 245)");
+  expect(result.bodyTextLength).toBeGreaterThan(10);
+  expect(result.backgroundColor).toBe("rgb(248, 250, 252)");
   expect(result.rootChildren).toBeGreaterThan(0);
   expect(result.visibleCards).toBeGreaterThan(0);
   expect(result.horizontalOverflow).toBeLessThanOrEqual(1);
   expect(result.overflowingButtons).toEqual([]);
   expect(result.doneTextDecorations).toEqual([]);
   expect(result.mobileNavOverlaps).toEqual([]);
+  if (result.mobileNavClearance !== null) {
+    expect(result.mobileNavClearance).toBeGreaterThanOrEqual(24);
+  }
   expect(result.oversizedCheckboxVisuals).toEqual([]);
 }
 

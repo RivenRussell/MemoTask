@@ -29,7 +29,8 @@ export function SettingsPage({
   return (
     <div className="settings-layout">
       <section className="soft-card settings-card">
-        <p className="section-kicker">AI API</p>
+        <img className="settings-sync-asset" src="/assets/ui/settings-sync-rings.png" alt="" aria-hidden="true" />
+        <h2>AI API</h2>
         <label htmlFor="base-url">接口地址</label>
         <input
           id="base-url"
@@ -69,7 +70,7 @@ export function SettingsPage({
         {error ? <p className="status-message status-message-error">{error}</p> : null}
       </section>
       <section className="soft-card settings-card">
-        <p className="section-kicker">Prompt</p>
+        <h2>Prompt</h2>
         <label htmlFor="prompt-template">Prompt</label>
         <textarea
           id="prompt-template"

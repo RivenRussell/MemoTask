@@ -1,6 +1,6 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ArrowDown, ArrowUp, FileText, GripVertical, Pencil } from "lucide-react";
+import { ArrowDown, ArrowUp, Pencil } from "lucide-react";
 import type { Memo } from "../types";
 
 export function MemoCard({
@@ -28,8 +28,15 @@ export function MemoCard({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
     >
+      <button
+        aria-label={`拖动排序 ${memo.title}`}
+        className="memo-hover-handle drag-handle"
+        title="拖动排序"
+        type="button"
+        {...attributes}
+        {...listeners}
+      />
       <div className="card-heading">
-        <FileText size={20} />
         <h2>{memo.title}</h2>
       </div>
       <p className="memo-content">{memo.content}</p>
@@ -53,16 +60,6 @@ export function MemoCard({
         {remainingTodoCount > 0 ? <li className="todo-remaining">还有 {remainingTodoCount} 个 Todo</li> : null}
       </ul>
       <div className="card-actions">
-        <button
-          aria-label={`拖动排序 ${memo.title}`}
-          className="secondary-action icon-only-action drag-handle"
-          title="拖动排序"
-          type="button"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical size={16} />
-        </button>
         <button
           aria-label={`上移 ${memo.title}`}
           className="secondary-action icon-only-action"

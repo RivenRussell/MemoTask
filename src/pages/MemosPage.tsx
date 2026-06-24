@@ -40,9 +40,8 @@ export function MemosPage({
     <div className="content-grid memos-grid">
       {memos.length === 0 ? (
         <section className="soft-card intro-card empty-memo-card">
-          <p className="section-kicker">当前 Memo 队列</p>
+          <img src="/assets/ui/empty-memos-cloud.png" alt="" aria-hidden="true" />
           <h2>还没有 Memo</h2>
-          <p>从记录页发布后会出现在这里。</p>
         </section>
       ) : (
         <DndContext collisionDetection={closestCenter} sensors={sensors} onDragEnd={handleDragEnd}>
