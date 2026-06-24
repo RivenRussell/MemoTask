@@ -1,7 +1,7 @@
 export const SESSION_COOKIE_NAME = "memotask_session";
 
 const PASSWORD_ALGORITHM = "pbkdf2-sha256";
-const PASSWORD_ITERATIONS = 210000;
+const PASSWORD_ITERATIONS = 100000;
 const PASSWORD_SALT_BYTES = 16;
 const TOKEN_BYTES = 32;
 

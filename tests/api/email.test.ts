@@ -51,4 +51,37 @@ describe("production email sender", () => {
     });
     expect(body.html).toContain("https://app.example.com/reset-password?token=token");
   });
+
+  it("calls the default fetch without relying on a method receiver", async () => {
+    const originalFetch = globalThis.fetch;
+    const requests: Request[] = [];
+    globalThis.fetch = function (this: unknown, request: RequestInfo | URL) {
+      if (this !== undefined) {
+        throw new TypeError("fetch receiver should be undefined");
+      }
+      if (!(request instanceof Request)) {
+        throw new Error("Expected a Request");
+      }
+      requests.push(request);
+      return Promise.resolve(Response.json({ id: "email-1" }));
+    } as typeof fetch;
+    try {
+      const sender = createEmailSender({
+        EMAIL_API_KEY: "test-email-key",
+        EMAIL_FROM: "MemoTask <noreply@example.com>",
+        APP_BASE_URL: "https://app.example.com"
+      });
+
+      await sender.send({
+        to: "owner@example.com",
+        subject: "验证你的 MemoTask 邮箱",
+        text: "打开链接完成验证",
+        actionUrl: "https://app.example.com/verify-email?token=token"
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    expect(requests).toHaveLength(1);
+  });
 });

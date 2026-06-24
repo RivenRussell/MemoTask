@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { AuthService } from "./auth/service";
+import { EmailConfigurationError, EmailDeliveryError } from "./auth/email";
 import { AuthError, type PublicAuthUser } from "./auth/types";
 import { moveMemoToHistory, restoreMemoFromHistory, shouldAutoArchiveMemo, toggleTodoStatus } from "./domain/state-machines";
 import { DEFAULT_AI_MODEL, DEFAULT_PROMPT, MemoryRepository } from "./repository/memory-repository";
@@ -63,6 +64,11 @@ function authErrorResponse(error: unknown): Response {
       { status: statusByCode[error.code] ?? 400 }
     );
   }
+  if (error instanceof EmailConfigurationError || error instanceof EmailDeliveryError) {
+    console.error("Auth email error", { name: error.name, message: error.message });
+    return Response.json({ error: { code: "EMAIL_DELIVERY_FAILED", message: "邮件发送失败，请稍后重试" } }, { status: 502 });
+  }
+  console.error("Unhandled auth error", error instanceof Error ? { name: error.name, message: error.message } : error);
   return Response.json({ error: { code: "AUTH_FAILED", message: "账号操作失败，请稍后重试" } }, { status: 500 });
 }
 

@@ -18,7 +18,7 @@ export class EmailDeliveryError extends Error {
   }
 }
 
-export function createEmailSender(env: EmailEnv, fetcher: typeof fetch = fetch): EmailSender {
+export function createEmailSender(env: EmailEnv, fetcher: typeof fetch = (request, init) => fetch(request, init)): EmailSender {
   return new ResendEmailSender(env, fetcher);
 }
 
@@ -53,6 +53,8 @@ class ResendEmailSender implements EmailSender {
       })
     );
     if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      console.error("Email delivery failed", { status: response.status, body: body.slice(0, 500) });
       throw new EmailDeliveryError();
     }
   }
