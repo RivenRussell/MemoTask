@@ -30,7 +30,7 @@ The current MemoTask deployment uses Workers, D1, Zero Trust Free, and a custom 
 Current production app URL:
 
 ```text
-https://memotask.rrwks.cn/memos
+https://memotask.rrwks.cn/login
 ```
 
 Current Worker:
@@ -143,7 +143,7 @@ custom_domain = true
 
 Important details:
 
-- `not_found_handling = "single-page-application"` allows direct routes such as `/memos`, `/history`, and `/settings` to load the React app.
+- `not_found_handling = "single-page-application"` allows direct routes such as `/login`, `/signup`, `/verify-email`, `/memos`, `/history`, and `/settings` to load the React app.
 - `run_worker_first = ["/api/*"]` ensures API requests go to Hono instead of static assets.
 - `workers_dev = true` keeps the fallback `workers.dev` URL enabled.
 - `preview_urls = true` allows preview deployments. Restrict this later if preview data should not be public.
@@ -339,7 +339,7 @@ To configure a custom domain:
 Verification commands:
 
 ```bash
-curl -I https://memotask.rrwks.cn/memos
+curl -I https://memotask.rrwks.cn/login
 curl https://memotask.rrwks.cn/api/health
 ```
 
@@ -353,7 +353,7 @@ HTTP/1.1 200 OK
 You can also confirm that production HTML references the latest bundle:
 
 ```bash
-curl -s https://memotask.rrwks.cn/memos
+curl -s https://memotask.rrwks.cn/login
 ```
 
 Look for the current `/assets/index-*.js` and `/assets/index-*.css` files.
@@ -407,7 +407,7 @@ npm run build
 npx playwright test tests/e2e/visual-qa.spec.ts --project=android
 npx playwright test tests/e2e/visual-qa.spec.ts --project=pc
 curl https://memotask.rrwks.cn/api/health
-curl -I https://memotask.rrwks.cn/memos
+curl -I https://memotask.rrwks.cn/login
 ```
 
 Latest verified local checks after UI polish:
@@ -423,9 +423,9 @@ Latest production checks:
 
 ```text
 GET https://memotask.rrwks.cn/api/health -> {"ok":true}
-GET https://memotask.rrwks.cn/memos -> 200 OK
+GET https://memotask.rrwks.cn/login -> 200 OK
 Production HTML references /assets/index-C0wqRxWN.js and /assets/index-C_BKT7Az.css
-Android Chrome screenshot loaded the Chinese MemoTask queue UI
+Android Chrome screenshot loaded the Chinese MemoTask login UI
 ```
 
 ## Troubleshooting
@@ -448,7 +448,7 @@ Check:
 not_found_handling = "single-page-application"
 ```
 
-This lets `/memos`, `/history`, and `/settings` resolve to the React app.
+This lets `/login`, `/signup`, `/verify-email`, `/memos`, `/history`, and `/settings` resolve to the React app.
 
 ### AI settings fail to save
 
@@ -516,7 +516,7 @@ Check:
 1. The domain is active in Cloudflare.
 2. The Worker route uses the exact hostname.
 3. The latest deployment completed successfully.
-4. `curl -I https://<hostname>/memos` returns `200 OK`.
+4. `curl -I https://<hostname>/login` returns `200 OK`.
 5. DNS resolves to Cloudflare.
 
 ### Cloudflare Access blocks mobile access

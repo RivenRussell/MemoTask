@@ -9,7 +9,7 @@ The app is built as a single Cloudflare Worker application: React/Vite serves th
 Production URL for this deployment:
 
 ```text
-https://memotask.rrwks.cn/memos
+https://memotask.rrwks.cn/login
 ```
 
 ## Product Design

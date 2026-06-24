@@ -15,24 +15,40 @@ describe("MemoTask auth flow", () => {
 
     expect(await screen.findByRole("heading", { name: "登录 MemoTask" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "队列" })).not.toBeInTheDocument();
-    expect(window.location.pathname).toBe("/memos");
+    expect(window.location.pathname).toBe("/login");
   });
 
-  it("registers an account, waits for email verification, then opens the queue", async () => {
+  it("registers an account, verifies by email code, then returns to login", async () => {
     renderAuthApp("/");
 
     await userEvent.click(await screen.findByRole("button", { name: "创建账号" }));
+    expect(window.location.pathname).toBe("/signup");
     await userEvent.type(screen.getByLabelText("邮箱"), "owner@example.com");
-    await userEvent.type(screen.getByLabelText("密码"), "correct horse battery staple");
+    await userEvent.type(screen.getByLabelText("密码"), "memo123");
+    await userEvent.type(screen.getByLabelText("确认密码"), "memo123");
+    expect(screen.getByText("至少 6 位，并同时包含英文字母和数字")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "显示密码" }));
+    expect(screen.getByLabelText("密码")).toHaveAttribute("type", "text");
+    await userEvent.click(screen.getByRole("button", { name: "隐藏密码" }));
+    expect(screen.getByLabelText("密码")).toHaveAttribute("type", "password");
     await userEvent.click(screen.getByRole("button", { name: "注册" }));
 
     expect(await screen.findByRole("heading", { name: "验证邮箱" })).toBeInTheDocument();
     expect(screen.getByText("owner@example.com")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/verify-email");
 
-    await userEvent.click(screen.getByRole("button", { name: "打开测试验证链接" }));
+    await userEvent.click(screen.getByRole("button", { name: "填入测试验证码" }));
+    await userEvent.click(screen.getByRole("button", { name: "验证邮箱" }));
+
+    expect(await screen.findByRole("heading", { name: "登录 MemoTask" })).toBeInTheDocument();
+    expect(screen.getByText("邮箱验证成功，请登录")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/login");
+
+    expect(screen.getByLabelText("邮箱")).toHaveValue("owner@example.com");
+    await userEvent.type(screen.getByLabelText("密码"), "memo123");
+    await userEvent.click(screen.getByRole("button", { name: "登录" }));
 
     expect(await screen.findByRole("heading", { name: "队列" })).toBeInTheDocument();
-    expect(screen.getByText("还没有 Memo")).toBeInTheDocument();
   });
 
   it("logs in and logs out with the app shell account control", async () => {
@@ -40,16 +56,23 @@ describe("MemoTask auth flow", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "创建账号" }));
     await userEvent.type(screen.getByLabelText("邮箱"), "owner@example.com");
-    await userEvent.type(screen.getByLabelText("密码"), "correct horse battery staple");
+    await userEvent.type(screen.getByLabelText("密码"), "memo123");
+    await userEvent.type(screen.getByLabelText("确认密码"), "memo123");
     await userEvent.click(screen.getByRole("button", { name: "注册" }));
-    await userEvent.click(await screen.findByRole("button", { name: "打开测试验证链接" }));
-    await screen.findByRole("heading", { name: "队列" });
+    await userEvent.click(await screen.findByRole("button", { name: "填入测试验证码" }));
+    await userEvent.click(screen.getByRole("button", { name: "验证邮箱" }));
+    await screen.findByRole("heading", { name: "登录 MemoTask" });
+    expect(screen.getByLabelText("邮箱")).toHaveValue("owner@example.com");
+    await userEvent.type(screen.getByLabelText("密码"), "memo123");
+    await userEvent.click(screen.getByRole("button", { name: "登录" }));
 
+    await screen.findByRole("heading", { name: "队列" });
     await userEvent.click(screen.getByRole("button", { name: "退出登录" }));
     expect(await screen.findByRole("heading", { name: "登录 MemoTask" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/login");
 
     await userEvent.type(screen.getByLabelText("邮箱"), "owner@example.com");
-    await userEvent.type(screen.getByLabelText("密码"), "correct horse battery staple");
+    await userEvent.type(screen.getByLabelText("密码"), "memo123");
     await userEvent.click(screen.getByRole("button", { name: "登录" }));
 
     expect(await screen.findByRole("heading", { name: "队列" })).toBeInTheDocument();
@@ -60,20 +83,27 @@ describe("MemoTask auth flow", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "创建账号" }));
     await userEvent.type(screen.getByLabelText("邮箱"), "owner@example.com");
-    await userEvent.type(screen.getByLabelText("密码"), "correct horse battery staple");
+    await userEvent.type(screen.getByLabelText("密码"), "memo123");
+    await userEvent.type(screen.getByLabelText("确认密码"), "memo123");
     await userEvent.click(screen.getByRole("button", { name: "注册" }));
-    await userEvent.click(await screen.findByRole("button", { name: "打开测试验证链接" }));
+    await userEvent.click(await screen.findByRole("button", { name: "填入测试验证码" }));
+    await userEvent.click(screen.getByRole("button", { name: "验证邮箱" }));
+    await screen.findByRole("heading", { name: "登录 MemoTask" });
+    expect(screen.getByLabelText("邮箱")).toHaveValue("owner@example.com");
+    await userEvent.type(screen.getByLabelText("密码"), "memo123");
+    await userEvent.click(screen.getByRole("button", { name: "登录" }));
     await screen.findByRole("heading", { name: "队列" });
     await userEvent.click(screen.getByRole("button", { name: "退出登录" }));
 
     await userEvent.click(await screen.findByRole("button", { name: "忘记密码" }));
+    expect(window.location.pathname).toBe("/forgot-password");
     await userEvent.type(screen.getByLabelText("邮箱"), "owner@example.com");
     await userEvent.click(screen.getByRole("button", { name: "发送重置邮件" }));
     expect(await screen.findByText("如果邮箱存在，重置链接已经发送")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "打开测试重置链接" }));
     expect(await screen.findByRole("heading", { name: "重置密码" })).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText("新密码"), "new correct horse battery staple");
+    await userEvent.type(screen.getByLabelText("新密码"), "new123");
     await userEvent.click(screen.getByRole("button", { name: "更新密码" }));
 
     expect(await screen.findByRole("heading", { name: "队列" })).toBeInTheDocument();

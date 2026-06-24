@@ -37,8 +37,8 @@ async function json(response: Response) {
   return response.json() as Promise<any>;
 }
 
-function tokenFromMessage(message: EmailMessage): string {
-  return new URL(message.actionUrl).searchParams.get("token") ?? "";
+function codeFromMessage(message: EmailMessage): string {
+  return message.text.match(/\b\d{6}\b/)?.[0] ?? "";
 }
 
 async function registerVerified(app: ReturnType<typeof createApi>, emailSender: RecordingEmailSender, email: string): Promise<string> {
@@ -46,7 +46,7 @@ async function registerVerified(app: ReturnType<typeof createApi>, emailSender: 
   const register = await app.request("/api/auth/register", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, password: "correct horse battery staple" })
+    body: JSON.stringify({ email, password: "memo123" })
   });
   expect(register.status).toBe(201);
   const verificationEmail = emailSender.messages.slice(before).at(-1);
@@ -55,10 +55,16 @@ async function registerVerified(app: ReturnType<typeof createApi>, emailSender: 
   const verify = await app.request("/api/auth/verify-email", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ token: tokenFromMessage(verificationEmail as EmailMessage) })
+    body: JSON.stringify({ code: codeFromMessage(verificationEmail as EmailMessage) })
   });
   expect(verify.status).toBe(200);
-  return verify.headers.get("set-cookie") ?? "";
+  const login = await app.request("/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, password: "memo123" })
+  });
+  expect(login.status).toBe(200);
+  return login.headers.get("set-cookie") ?? "";
 }
 
 describe("user data isolation", () => {

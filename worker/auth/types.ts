@@ -36,7 +36,7 @@ export interface EmailMessage {
   to: string;
   subject: string;
   text: string;
-  actionUrl: string;
+  actionUrl?: string;
 }
 
 export interface EmailSender {

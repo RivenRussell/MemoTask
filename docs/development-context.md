@@ -106,7 +106,7 @@ docs/cloudflare-setup.md
 Current public production URL:
 
 ```text
-https://memotask.rrwks.cn/memos
+https://memotask.rrwks.cn/login
 ```
 
 Current Cloudflare resources:
@@ -128,32 +128,34 @@ Authentication:
 
 ## Latest Verified Deployment
 
-UI polish deployment:
+V2 auth code-verification deployment:
 
 ```text
-Date: 2026-06-23
-Worker version ID: <masked-worker-version-id>
-Production JS bundle: /assets/index-C0wqRxWN.js
-Production CSS bundle: /assets/index-C_BKT7Az.css
+Date: 2026-06-24
+Worker version ID: 547421ff-e016-42fc-9e3b-83d28ae111c5
+Production JS bundle: /assets/index-4D30vy--.js
+Production CSS bundle: /assets/index-D24fTpf2.css
 ```
 
 Verification:
 
 ```text
-npm test -> 13 files, 57 tests passed
+npm test -> 19 files, 80 tests passed
 npm run build -> passed
-Android visual QA -> 6 passed
-PC visual QA -> 5 passed, 1 Android-only check skipped
+Local Playwright Chrome smoke -> /login, /signup, /verify-email passed
 GET https://memotask.rrwks.cn/api/health -> {"ok":true}
-GET https://memotask.rrwks.cn/memos -> 200 OK
+GET https://memotask.rrwks.cn/login -> 200 OK
+GET https://memotask.rrwks.cn/signup -> 200 OK
+GET https://memotask.rrwks.cn/api/memos without session -> 401 AUTH_REQUIRED
+Production registration smoke -> 201, Resend email path triggered; temporary test user cleaned from D1
 ```
 
-UI changes in the latest deployment:
+Auth changes in the latest deployment:
 
-- Mobile Memo detail page now opens at the top and prioritizes Todo management.
-- Memo cards show a hidden Todo count when more than three Todo items exist.
-- Empty queue state is simplified.
-- History Todo visual checkboxes no longer stretch wider than normal.
+- `/login`, `/signup`, `/forgot-password`, `/reset-password`, and `/verify-email` are now first-class routes.
+- Email verification uses a 6-digit code and returns verified users to `/login`.
+- Signup includes confirm password, password visibility toggle, and a 6+ character letter/number password hint.
+- Login support actions are lighter text buttons with improved desktop and mobile spacing.
 
 ## Implementation Notes
 
@@ -239,8 +241,8 @@ Use these after deployment:
 
 ```bash
 curl https://memotask.rrwks.cn/api/health
-curl -I https://memotask.rrwks.cn/memos
-curl -s https://memotask.rrwks.cn/memos
+curl -I https://memotask.rrwks.cn/login
+curl -s https://memotask.rrwks.cn/login
 ```
 
 The final command should show the latest `/assets/index-*.js` and `/assets/index-*.css` references.

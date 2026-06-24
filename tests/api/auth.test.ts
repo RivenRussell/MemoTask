@@ -26,7 +26,14 @@ function createAuthService() {
   return { repository, emailSender, service };
 }
 
-function tokenFromLatestEmail(emailSender: RecordingEmailSender): string {
+function verificationCodeFromLatestEmail(emailSender: RecordingEmailSender): string {
+  const latest = emailSender.messages.at(-1);
+  expect(latest).toBeDefined();
+  const match = latest?.text.match(/\b\d{6}\b/);
+  return match?.[0] ?? "";
+}
+
+function resetTokenFromLatestEmail(emailSender: RecordingEmailSender): string {
   const latest = emailSender.messages.at(-1);
   expect(latest).toBeDefined();
   const url = new URL(latest?.actionUrl ?? "");
@@ -37,7 +44,7 @@ describe("AuthService", () => {
   it("registers an unverified user and sends a verification email without leaking password data", async () => {
     const { emailSender, repository, service } = createAuthService();
 
-    const result = await service.register({ email: "  Owner@Example.com ", password: "correct horse battery staple" }, now);
+    const result = await service.register({ email: "  Owner@Example.com ", password: "memo123" }, now);
 
     expect(result.user).toMatchObject({ email: "owner@example.com", emailVerified: false });
     expect(result.user).not.toHaveProperty("passwordHash");
@@ -46,42 +53,60 @@ describe("AuthService", () => {
       to: "owner@example.com",
       subject: "验证你的 MemoTask 邮箱"
     });
-    expect(emailSender.messages[0].actionUrl).toMatch(/^https:\/\/memotask\.example\.com\/verify-email\?token=.+/);
+    expect(emailSender.messages[0].text).toMatch(/\b\d{6}\b/);
+    expect(emailSender.messages[0].text).not.toContain("/verify-email?token=");
     const stored = await repository.findUserByEmail("owner@example.com");
     expect(stored?.passwordHash).toMatch(/^pbkdf2-sha256:/);
   });
 
   it("rejects duplicate registration for the same normalized email", async () => {
     const { service } = createAuthService();
-    await service.register({ email: "owner@example.com", password: "correct horse battery staple" }, now);
+    await service.register({ email: "owner@example.com", password: "memo123" }, now);
 
-    await expect(service.register({ email: " OWNER@example.com ", password: "another strong password" }, now)).rejects.toMatchObject({
+    await expect(service.register({ email: " OWNER@example.com ", password: "memo456" }, now)).rejects.toMatchObject({
       code: "EMAIL_ALREADY_REGISTERED"
     });
   });
 
   it("blocks login until email verification succeeds, then creates a session", async () => {
     const { emailSender, service } = createAuthService();
-    await service.register({ email: "owner@example.com", password: "correct horse battery staple" }, now);
+    await service.register({ email: "owner@example.com", password: "memo123" }, now);
 
-    await expect(service.login({ email: "owner@example.com", password: "correct horse battery staple" }, now)).rejects.toMatchObject({
+    await expect(service.login({ email: "owner@example.com", password: "memo123" }, now)).rejects.toMatchObject({
       code: "EMAIL_NOT_VERIFIED"
     });
 
-    const verified = await service.verifyEmail(tokenFromLatestEmail(emailSender), now);
+    const verified = await service.verifyEmail(verificationCodeFromLatestEmail(emailSender), now);
     expect(verified.user.emailVerified).toBe(true);
     expect(verified.sessionCookie).toContain("memotask_session=");
     expect(verified.sessionCookie).toContain("HttpOnly");
 
-    const loggedIn = await service.login({ email: "OWNER@example.com", password: "correct horse battery staple" }, now);
+    const loggedIn = await service.login({ email: "OWNER@example.com", password: "memo123" }, now);
     expect(loggedIn.user).toMatchObject({ email: "owner@example.com", emailVerified: true });
     expect(loggedIn.sessionCookie).toContain("memotask_session=");
   });
 
+  it("requires passwords to be at least 6 characters with letters and numbers", async () => {
+    const { service } = createAuthService();
+
+    await expect(service.register({ email: "short@example.com", password: "abc12" }, now)).rejects.toMatchObject({
+      code: "PASSWORD_WEAK"
+    });
+    await expect(service.register({ email: "letters@example.com", password: "abcdef" }, now)).rejects.toMatchObject({
+      code: "PASSWORD_WEAK"
+    });
+    await expect(service.register({ email: "numbers@example.com", password: "123456" }, now)).rejects.toMatchObject({
+      code: "PASSWORD_WEAK"
+    });
+    await expect(service.register({ email: "valid@example.com", password: "abc123" }, now)).resolves.toMatchObject({
+      user: { email: "valid@example.com", emailVerified: false }
+    });
+  });
+
   it("rejects invalid passwords for verified users", async () => {
     const { emailSender, service } = createAuthService();
-    await service.register({ email: "owner@example.com", password: "correct horse battery staple" }, now);
-    await service.verifyEmail(tokenFromLatestEmail(emailSender), now);
+    await service.register({ email: "owner@example.com", password: "memo123" }, now);
+    await service.verifyEmail(verificationCodeFromLatestEmail(emailSender), now);
 
     await expect(service.login({ email: "owner@example.com", password: "wrong password" }, now)).rejects.toMatchObject({
       code: "INVALID_CREDENTIALS"
@@ -90,8 +115,8 @@ describe("AuthService", () => {
 
   it("sends password reset email generically and rejects reused reset tokens", async () => {
     const { emailSender, service } = createAuthService();
-    await service.register({ email: "owner@example.com", password: "correct horse battery staple" }, now);
-    await service.verifyEmail(tokenFromLatestEmail(emailSender), now);
+    await service.register({ email: "owner@example.com", password: "memo123" }, now);
+    await service.verifyEmail(verificationCodeFromLatestEmail(emailSender), now);
 
     const response = await service.forgotPassword("owner@example.com", now);
     expect(response).toEqual({ ok: true });
@@ -100,18 +125,18 @@ describe("AuthService", () => {
       subject: "重置你的 MemoTask 密码"
     });
 
-    const resetToken = tokenFromLatestEmail(emailSender);
-    const reset = await service.resetPassword({ token: resetToken, password: "new correct horse battery staple" }, now);
+    const resetToken = resetTokenFromLatestEmail(emailSender);
+    const reset = await service.resetPassword({ token: resetToken, password: "new123" }, now);
     expect(reset.user.email).toBe("owner@example.com");
     expect(reset.sessionCookie).toContain("memotask_session=");
 
-    await expect(service.resetPassword({ token: resetToken, password: "another strong password" }, now)).rejects.toMatchObject({
+    await expect(service.resetPassword({ token: resetToken, password: "other123" }, now)).rejects.toMatchObject({
       code: "TOKEN_INVALID"
     });
-    await expect(service.login({ email: "owner@example.com", password: "correct horse battery staple" }, now)).rejects.toMatchObject({
+    await expect(service.login({ email: "owner@example.com", password: "memo123" }, now)).rejects.toMatchObject({
       code: "INVALID_CREDENTIALS"
     });
-    await expect(service.login({ email: "owner@example.com", password: "new correct horse battery staple" }, now)).resolves.toMatchObject({
+    await expect(service.login({ email: "owner@example.com", password: "new123" }, now)).resolves.toMatchObject({
       user: { email: "owner@example.com", emailVerified: true }
     });
   });
@@ -146,9 +171,10 @@ async function json(response: Response) {
 }
 
 async function verifiedSessionCookie(authService: AuthService, emailSender: RecordingEmailSender): Promise<string> {
-  await authService.register({ email: "owner@example.com", password: "correct horse battery staple" }, now);
-  const verified = await authService.verifyEmail(tokenFromLatestEmail(emailSender), now);
-  return verified.sessionCookie;
+  await authService.register({ email: "owner@example.com", password: "memo123" }, now);
+  await authService.verifyEmail(verificationCodeFromLatestEmail(emailSender), now);
+  const loggedIn = await authService.login({ email: "owner@example.com", password: "memo123" }, now);
+  return loggedIn.sessionCookie;
 }
 
 describe("auth API protection", () => {
@@ -168,7 +194,7 @@ describe("auth API protection", () => {
     const register = await app.request("/api/auth/register", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: "owner@example.com", password: "correct horse battery staple" })
+      body: JSON.stringify({ email: "owner@example.com", password: "memo123" })
     });
     expect(register.status).toBe(201);
     const unverifiedCookie = register.headers.get("set-cookie") ?? "";
@@ -180,7 +206,7 @@ describe("auth API protection", () => {
     const verify = await app.request("/api/auth/verify-email", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ token: tokenFromLatestEmail(emailSender) })
+      body: JSON.stringify({ code: verificationCodeFromLatestEmail(emailSender) })
     });
     expect(verify.status).toBe(200);
     const sessionCookie = verify.headers.get("set-cookie") ?? "";
@@ -201,11 +227,11 @@ describe("auth API protection", () => {
     const anonymous = await app.request("/api/memos");
     expect(anonymous.status).toBe(401);
 
-    const registered = await authService.register({ email: "owner@example.com", password: "correct horse battery staple" }, now);
+    const registered = await authService.register({ email: "owner@example.com", password: "memo123" }, now);
     const unverifiedResponse = await app.request("/api/memos", { headers: { cookie: registered.sessionCookie } });
     expect(unverifiedResponse.status).toBe(403);
 
-    await expect(authService.login({ email: "owner@example.com", password: "correct horse battery staple" }, now)).rejects.toMatchObject({
+    await expect(authService.login({ email: "owner@example.com", password: "memo123" }, now)).rejects.toMatchObject({
       code: "EMAIL_NOT_VERIFIED"
     });
   });

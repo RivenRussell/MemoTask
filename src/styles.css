@@ -173,7 +173,7 @@ button {
 
 .auth-card h1 {
   margin: 8px 0 16px;
-  font-size: 32px;
+  font-size: 30px;
   line-height: 1.15;
 }
 
@@ -184,6 +184,45 @@ button {
 
 .auth-form .primary-action {
   margin-top: 4px;
+}
+
+.auth-email-display {
+  margin: 0 0 18px;
+  color: #708088;
+  font-size: 20px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.auth-support-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.password-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-radius: 18px;
+  background: #eef3f5;
+  box-shadow:
+    inset 6px 6px 12px rgba(163, 177, 185, 0.38),
+    inset -6px -6px 12px rgba(255, 255, 255, 0.78);
+}
+
+.password-field input {
+  min-width: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+.password-toggle {
+  min-height: 36px;
+  margin-right: 8px;
+  padding: 0 10px;
+  white-space: nowrap;
 }
 
 .content-grid {
@@ -516,6 +555,22 @@ textarea {
   color: #6c8fa3;
 }
 
+.text-action {
+  min-height: 36px;
+  border: 0;
+  border-radius: 14px;
+  padding: 0 10px;
+  color: #6c8fa3;
+  background: transparent;
+  font-weight: 800;
+}
+
+.text-action:hover,
+.text-action:focus-visible {
+  background: rgba(108, 143, 163, 0.08);
+  outline: none;
+}
+
 .icon-only-action {
   width: 44px;
   padding: 0;
@@ -699,5 +754,10 @@ textarea {
 
   .auth-card {
     padding: 24px;
+  }
+
+  .auth-support-actions {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

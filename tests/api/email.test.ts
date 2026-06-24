@@ -9,8 +9,7 @@ describe("production email sender", () => {
       sender.send({
         to: "owner@example.com",
         subject: "验证你的 MemoTask 邮箱",
-        text: "打开链接完成验证",
-        actionUrl: "https://app.example.com/verify-email?token=token"
+        text: "你的 MemoTask 邮箱验证码是：123456。验证码 24 小时内有效。"
       })
     ).rejects.toBeInstanceOf(EmailConfigurationError);
   });
@@ -75,8 +74,7 @@ describe("production email sender", () => {
       await sender.send({
         to: "owner@example.com",
         subject: "验证你的 MemoTask 邮箱",
-        text: "打开链接完成验证",
-        actionUrl: "https://app.example.com/verify-email?token=token"
+        text: "你的 MemoTask 邮箱验证码是：123456。验证码 24 小时内有效。"
       });
     } finally {
       globalThis.fetch = originalFetch;

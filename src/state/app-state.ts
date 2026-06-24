@@ -56,6 +56,7 @@ export interface AppState {
   register: (email: string, password: string) => Promise<void>;
   forgotPassword: (email: string) => Promise<void>;
   resetPassword: (password: string) => Promise<void>;
+  verifyEmail: (code: string) => Promise<void>;
   resendVerification: () => Promise<void>;
   openTestVerificationLink: () => void;
   openTestResetLink: () => void;
@@ -125,11 +126,11 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   const [historyMessage, setHistoryMessage] = useState<string | null>(null);
   const [detailMessage, setDetailMessage] = useState<string | null>(null);
   const [lastHistoryDeleteOperationId, setLastHistoryDeleteOperationId] = useState<string | null>(null);
-  const [authMode, setAuthModeState] = useState<AuthMode>(() => (window.location.pathname === "/reset-password" ? "reset" : "checking"));
+  const [authMode, setAuthModeState] = useState<AuthMode>(() => authModeFromPath(window.location.pathname) ?? "checking");
   const [authUser, setAuthUser] = useState<AuthUserView | null>(null);
   const [authEmail, setAuthEmail] = useState("");
   const [authMessage, setAuthMessage] = useState<string | null>(null);
-  const [verificationToken, setVerificationToken] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
   const [resetToken, setResetToken] = useState(new URLSearchParams(window.location.search).get("token") ?? "");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -138,13 +139,18 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
 
   useEffect(() => {
     if (window.location.pathname === "/") {
-      window.history.replaceState({}, "", "/memos");
+      window.history.replaceState({}, "", "/login");
     }
     void checkAuth();
   }, []);
 
   useEffect(() => {
     function handlePopState() {
+      const authMode = authModeFromPath(window.location.pathname);
+      if (authMode) {
+        setAuthModeState(authMode);
+        return;
+      }
       const nextRoute = routeFromPath();
       applyRoute(nextRoute, false);
     }
@@ -192,15 +198,18 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
       const user = await client.getCurrentUser();
       setAuthUser(user);
       if (!user) {
-        setAuthModeState(window.location.pathname === "/reset-password" ? "reset" : "login");
+        setAuthMode(authModeFromPath(window.location.pathname) ?? "login");
         return;
       }
       setAuthEmail(user.email);
       if (!user.emailVerified) {
-        setAuthModeState("unverified");
+        setAuthMode("unverified");
         return;
       }
       setAuthModeState("authenticated");
+      if (isAuthPath(window.location.pathname)) {
+        applyRoute({ page: "memos", memoId: null }, true);
+      }
       await refreshMemos();
     });
   }
@@ -213,6 +222,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
       setAuthMessage(null);
       setAuthModeState(user.emailVerified ? "authenticated" : "unverified");
       if (user.emailVerified) {
+        applyRoute({ page: "memos", memoId: null }, true);
         await refreshMemos();
       }
     });
@@ -223,9 +233,9 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
       const user = await client.register({ email, password });
       setAuthUser(user);
       setAuthEmail(user.email);
-      setAuthMessage("验证邮件已发送");
-      setVerificationToken(readTestToken("getLatestVerificationToken"));
-      setAuthModeState(user.emailVerified ? "authenticated" : "unverified");
+      setAuthMessage("验证码已发送，请查看邮箱");
+      setVerificationCode(readTestToken("getLatestVerificationCode"));
+      setAuthMode("unverified");
     });
   }
 
@@ -234,12 +244,12 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
       await client.logout();
       setAuthUser(null);
       setAuthEmail("");
-      setVerificationToken("");
+      setVerificationCode("");
       setResetToken("");
       setMemos([]);
       setActiveMemo(null);
       setAuthMessage(null);
-      setAuthModeState("login");
+      setAuthMode("login");
     });
   }
 
@@ -267,24 +277,27 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   async function resendVerification() {
     await run(async () => {
       await client.resendVerification(authEmail);
-      setVerificationToken(readTestToken("getLatestVerificationToken"));
-      setAuthMessage("验证邮件已重新发送");
+      setVerificationCode(readTestToken("getLatestVerificationCode"));
+      setAuthMessage("验证码已重新发送");
+    });
+  }
+
+  async function verifyEmail(code: string) {
+    await run(async () => {
+      const user = await client.verifyEmail(code);
+      setAuthUser(null);
+      setAuthEmail(user.email);
+      setVerificationCode("");
+      setAuthMode("login");
+      setAuthMessage("邮箱验证成功，请登录");
     });
   }
 
   function openTestVerificationLink() {
-    if (!verificationToken) {
+    if (!verificationCode) {
       return;
     }
-    void run(async () => {
-      const user = await client.verifyEmail(verificationToken);
-      setAuthUser(user);
-      setAuthEmail(user.email);
-      setAuthMessage(null);
-      setAuthModeState("authenticated");
-      applyRoute({ page: "memos", memoId: null }, true);
-      await refreshMemos();
-    });
+    window.dispatchEvent(new CustomEvent("memotask:test-verification-code", { detail: verificationCode }));
   }
 
   function openTestResetLink() {
@@ -299,9 +312,13 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     setAuthMessage(null);
     setError(null);
     setAuthModeState(mode);
+    const authPath = pathForAuthMode(mode);
+    if (authPath && window.location.pathname !== authPath) {
+      window.history.pushState({}, "", authPath);
+    }
   }
 
-  function readTestToken(methodName: "getLatestVerificationToken" | "getLatestResetToken"): string {
+  function readTestToken(methodName: "getLatestVerificationCode" | "getLatestResetToken"): string {
     const candidate = client as ApiClient & Partial<Record<typeof methodName, () => string>>;
     return candidate[methodName]?.() ?? "";
   }
@@ -798,7 +815,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     authUser,
     authEmail,
     authMessage,
-    canOpenTestVerificationLink: Boolean(verificationToken),
+    canOpenTestVerificationLink: Boolean(verificationCode),
     canOpenTestResetLink: Boolean(resetToken),
     page,
     activePrimary,
@@ -825,6 +842,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     register,
     forgotPassword,
     resetPassword,
+    verifyEmail,
     resendVerification,
     openTestVerificationLink,
     openTestResetLink,
@@ -881,6 +899,28 @@ function routeFromPath(pathname: string = window.location.pathname): RouteState 
   }
 
   return { page: "memos", memoId: null };
+}
+
+function authModeFromPath(pathname: string): AuthMode | null {
+  if (pathname === "/login") return "login";
+  if (pathname === "/signup") return "register";
+  if (pathname === "/forgot-password") return "forgot";
+  if (pathname === "/reset-password") return "reset";
+  if (pathname === "/verify-email") return "unverified";
+  return null;
+}
+
+function isAuthPath(pathname: string): boolean {
+  return authModeFromPath(pathname) !== null;
+}
+
+function pathForAuthMode(mode: AuthMode): string | null {
+  if (mode === "login") return "/login";
+  if (mode === "register") return "/signup";
+  if (mode === "forgot") return "/forgot-password";
+  if (mode === "reset") return "/reset-password";
+  if (mode === "unverified") return "/verify-email";
+  return null;
 }
 
 function pathForRoute(route: RouteState): string {

@@ -50,11 +50,11 @@ export class ApiClient {
     await this.request<{ ok: true }>("/api/auth/logout", { method: "POST" });
   }
 
-  async verifyEmail(token: string): Promise<AuthUserView> {
+  async verifyEmail(code: string): Promise<AuthUserView> {
     const body = await this.request<{ user: AuthUserView }>("/api/auth/verify-email", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ token })
+      body: JSON.stringify({ code })
     });
     assertPresent(body.user);
     return body.user;

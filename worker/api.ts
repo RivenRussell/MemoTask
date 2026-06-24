@@ -57,6 +57,7 @@ function authErrorResponse(error: unknown): Response {
       PASSWORD_TOO_SHORT: 400,
       INVALID_CREDENTIALS: 401,
       EMAIL_NOT_VERIFIED: 403,
+      PASSWORD_WEAK: 400,
       TOKEN_INVALID: 400
     };
     return Response.json(
@@ -264,8 +265,8 @@ export function createApi(options: ApiOptions = {}) {
     }
 
     try {
-      const body = await readJson<{ token?: string }>(context);
-      const result = await options.authService.verifyEmail(body.token ?? "", getNow(options));
+      const body = await readJson<{ code?: string; token?: string }>(context);
+      const result = await options.authService.verifyEmail(body.code ?? body.token ?? "", getNow(options));
       return withSessionCookie(context, { user: result.user }, result.sessionCookie);
     } catch (error) {
       return authErrorResponse(error);

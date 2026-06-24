@@ -39,6 +39,7 @@ export default function App({ client }: { client?: ApiClient }) {
         onResendVerification={state.resendVerification}
         onResetPassword={state.resetPassword}
         onSetMode={state.setAuthMode}
+        onVerifyEmail={state.verifyEmail}
       />
     );
   }

@@ -48,7 +48,9 @@ class ResendEmailSender implements EmailSender {
           to: [message.to],
           subject: message.subject,
           text: message.text,
-          html: `<p>${escapeHtml(message.text)}</p><p><a href="${escapeAttribute(message.actionUrl)}">打开链接</a></p>`
+          html: message.actionUrl
+            ? `<p>${escapeHtml(message.text)}</p><p><a href="${escapeAttribute(message.actionUrl)}">打开链接</a></p>`
+            : `<p>${escapeHtml(message.text)}</p>`
         })
       })
     );

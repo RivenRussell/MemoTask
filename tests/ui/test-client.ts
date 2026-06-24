@@ -120,11 +120,15 @@ export function createAuthenticatedUiTestClient() {
   const client = new ApiClient(fetcher);
   const latestTokenForSubject = (subject: string) => {
     const message = emailSender.messages.filter((candidate) => candidate.subject === subject).at(-1);
-    return message ? new URL(message.actionUrl).searchParams.get("token") ?? "" : "";
+    return message?.actionUrl ? new URL(message.actionUrl).searchParams.get("token") ?? "" : "";
+  };
+  const latestCodeForSubject = (subject: string) => {
+    const message = emailSender.messages.filter((candidate) => candidate.subject === subject).at(-1);
+    return message?.text.match(/\b\d{6}\b/)?.[0] ?? "";
   };
 
   return Object.assign(client, {
-    getLatestVerificationToken: () => latestTokenForSubject("验证你的 MemoTask 邮箱"),
+    getLatestVerificationCode: () => latestCodeForSubject("验证你的 MemoTask 邮箱"),
     getLatestResetToken: () => latestTokenForSubject("重置你的 MemoTask 密码")
   });
 }

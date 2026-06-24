@@ -40,6 +40,11 @@ interface AuthResult {
   sessionCookie: string;
 }
 
+interface VerificationResult {
+  user: PublicAuthUser;
+  sessionCookie: string;
+}
+
 export class AuthService {
   constructor(private readonly options: AuthServiceOptions) {}
 
@@ -75,11 +80,11 @@ export class AuthService {
     return this.createSessionResult(user, now);
   }
 
-  async verifyEmail(token: string, now: string): Promise<AuthResult> {
-    const record = await this.validEmailVerificationToken(token, now);
+  async verifyEmail(code: string, now: string): Promise<VerificationResult> {
+    const record = await this.validEmailVerificationToken(code, now);
     const user = await this.options.repository.findUserById(record.userId);
     if (!user) {
-      throw new AuthError("TOKEN_INVALID", "验证链接无效");
+      throw new AuthError("TOKEN_INVALID", "验证码无效");
     }
 
     const verified = await this.options.repository.updateUser({
@@ -88,7 +93,11 @@ export class AuthService {
       updatedAt: now
     });
     await this.options.repository.updateEmailVerificationToken({ ...record, usedAt: now });
-    return this.createSessionResult(verified, now);
+    await this.options.repository.deleteSessionsForUser(verified.id);
+    return {
+      user: publicUser(verified),
+      sessionCookie: createExpiredSessionCookie()
+    };
   }
 
   async resendVerification(email: string, now: string): Promise<{ ok: true }> {
@@ -164,15 +173,18 @@ export class AuthService {
   }
 
   private async sendVerificationEmail(user: AuthUser, now: string): Promise<void> {
-    const token = await this.createTokenRecord(user.id, EMAIL_VERIFICATION_TTL_MS, now, (record) =>
-      this.options.repository.createEmailVerificationToken(record)
+    const code = createVerificationCode();
+    await this.createTokenRecord(
+      user.id,
+      EMAIL_VERIFICATION_TTL_MS,
+      now,
+      (record) => this.options.repository.createEmailVerificationToken(record),
+      code
     );
-    const actionUrl = authUrl(this.options.appBaseUrl, "/verify-email", token);
     await this.options.emailSender.send({
       to: user.email,
       subject: "验证你的 MemoTask 邮箱",
-      text: `打开链接完成邮箱验证：${actionUrl}`,
-      actionUrl
+      text: `你的 MemoTask 邮箱验证码是：${code}。验证码 24 小时内有效。`
     });
   }
 
@@ -193,9 +205,9 @@ export class AuthService {
     userId: string,
     ttlMs: number,
     now: string,
-    save: (record: AuthTokenRecord) => Promise<AuthTokenRecord>
+    save: (record: AuthTokenRecord) => Promise<AuthTokenRecord>,
+    token = createRandomToken()
   ): Promise<string> {
-    const token = createRandomToken();
     await save({
       id: createId("token"),
       userId,
@@ -210,7 +222,7 @@ export class AuthService {
   private async validEmailVerificationToken(token: string, now: string): Promise<AuthTokenRecord> {
     const record = await this.options.repository.findEmailVerificationTokenByHash(await hashToken(token));
     if (!record || record.usedAt || isExpired(record.expiresAt, now)) {
-      throw new AuthError("TOKEN_INVALID", "验证链接无效或已过期");
+      throw new AuthError("TOKEN_INVALID", "验证码无效或已过期");
     }
     return record;
   }
@@ -242,8 +254,8 @@ function normalizeEmail(email: string): string {
 }
 
 function assertValidPassword(password: string): void {
-  if (password.length < 12) {
-    throw new AuthError("PASSWORD_TOO_SHORT", "密码至少需要 12 个字符");
+  if (password.length < 6 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+    throw new AuthError("PASSWORD_WEAK", "密码至少 6 位，并同时包含英文字母和数字");
   }
 }
 
@@ -264,6 +276,11 @@ function authUrl(baseUrl: string, path: string, token: string): string {
 
 function createId(prefix: string): string {
   return `${prefix}-${crypto.randomUUID()}`;
+}
+
+function createVerificationCode(): string {
+  const value = crypto.getRandomValues(new Uint32Array(1))[0] % 1000000;
+  return value.toString().padStart(6, "0");
 }
 
 function addMilliseconds(value: string, milliseconds: number): string {
