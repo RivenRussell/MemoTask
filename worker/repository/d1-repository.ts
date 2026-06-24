@@ -1,6 +1,6 @@
 import type { Memo, MemoTodo } from "../domain/types";
 import type { AiSettings, AiSettingsInput, DraftInput, MemoRepository, PublishMemoInput, SyncStatus } from "./types";
-import { DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, DEFAULT_PROMPT } from "./memory-repository";
+import { DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, DEFAULT_PROMPT, normalizePromptTemplate } from "../../src/shared/ai-defaults";
 
 type MemoRow = {
   id: string;
@@ -360,7 +360,14 @@ export class D1Repository implements MemoRepository {
   async getAiSettings(userId: string, now: string): Promise<AiSettings> {
     const row = await this.db.prepare("SELECT * FROM ai_settings WHERE id = ? AND user_id = ?").bind(userId, userId).first<AiSettingsRow>();
     if (row) {
-      return mapAiSettings(row);
+      const settings = mapAiSettings(row);
+      const normalizedPrompt = normalizePromptTemplate(settings.promptTemplate);
+      if (normalizedPrompt !== settings.promptTemplate) {
+        const upgraded = { ...settings, promptTemplate: normalizedPrompt, updatedAt: now };
+        await this.upsertAiSettings(upgraded);
+        return upgraded;
+      }
+      return settings;
     }
 
     const settings = createDefaultAiSettings(userId, now);

@@ -216,6 +216,18 @@ describe("D1Repository", () => {
     expect(settings.userId).toBe("default");
   });
 
+  it("upgrades legacy short AI prompts stored in D1", async () => {
+    const db = new CannedD1Database([], [], settingsRow({ prompt_template: "你是 MemoTask 的整理助手。" }));
+    const repository = new D1Repository(db as unknown as D1Database);
+
+    const settings = await repository.getAiSettings("default", "2026-06-22T12:30:00.000Z");
+
+    expect(settings.promptTemplate).toContain("输出必须是 JSON");
+    expect(settings.promptTemplate.length).toBeGreaterThan(200);
+    expect(settings.updatedAt).toBe("2026-06-22T12:30:00.000Z");
+    expect(db.statements.some((statement) => statement.query.includes("INTO ai_settings"))).toBe(true);
+  });
+
   it("soft-deletes history memos with one scoped update instead of per-memo upserts", async () => {
     const db = new CannedD1Database(
       [
@@ -277,6 +289,21 @@ function memoRow(overrides: Partial<Record<string, unknown>>): Record<string, un
     published_at: "2026-06-22T12:00:00.000Z",
     history_at: null,
     deleted_at: null,
+    ...overrides
+  };
+}
+
+function settingsRow(overrides: Partial<Record<string, unknown>>): Record<string, unknown> {
+  return {
+    id: "default",
+    user_id: "default",
+    base_url: "",
+    model: "",
+    encrypted_api_key: null,
+    api_key_mask: null,
+    prompt_template: "整理 Memo",
+    created_at: "2026-06-22T12:00:00.000Z",
+    updated_at: "2026-06-22T12:00:00.000Z",
     ...overrides
   };
 }

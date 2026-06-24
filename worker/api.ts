@@ -3,8 +3,9 @@ import type { AuthService } from "./auth/service";
 import { EmailConfigurationError, EmailDeliveryError } from "./auth/email";
 import { AuthError, type PublicAuthUser } from "./auth/types";
 import { moveMemoToHistory, restoreMemoFromHistory, shouldAutoArchiveMemo, toggleTodoStatus } from "./domain/state-machines";
-import { DEFAULT_PROMPT, MemoryRepository } from "./repository/memory-repository";
+import { MemoryRepository } from "./repository/memory-repository";
 import type { AiSettings, MemoRepository } from "./repository/types";
+import { DEFAULT_PROMPT } from "../src/shared/ai-defaults";
 
 interface ApiOptions {
   repository?: MemoRepository;

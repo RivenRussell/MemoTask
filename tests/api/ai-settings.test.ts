@@ -95,6 +95,26 @@ describe("AI settings and analyze API", () => {
     expect(body.settings.promptTemplate).toContain("你是 MemoTask 的整理助手");
   });
 
+  it("upgrades the legacy short prompt to the built-in default", async () => {
+    const { app, repository } = createTestApi();
+    await repository.saveAiSettings(
+      "default",
+      {
+        baseUrl: "",
+        model: "",
+        promptTemplate: "你是 MemoTask 的整理助手。"
+      },
+      "2026-06-22T12:00:00.000Z"
+    );
+
+    const response = await app.request("/api/ai/settings");
+    const body = await json(response);
+
+    expect(response.status).toBe(200);
+    expect(body.settings.promptTemplate).toContain("输出必须是 JSON");
+    expect(body.settings.promptTemplate.length).toBeGreaterThan(200);
+  });
+
   it("marks analyze unavailable when API settings are missing", async () => {
     const { app } = createTestApi();
     const draft = await json(

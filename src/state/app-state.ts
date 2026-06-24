@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiClient, apiClient } from "../api/client";
+import { DEFAULT_PROMPT } from "../shared/ai-defaults";
 import type { AiSettingsView, AuthUserView, DraftTodoInput, Memo, PublishMemoInput, SyncStatusView } from "../types";
 
 export type Page = "capture" | "memos" | "memoDetail" | "settings" | "history";
@@ -103,7 +104,7 @@ const defaultAiSettingsDraft: AiSettingsDraft = {
   baseUrl: "",
   model: "",
   apiKey: "",
-  promptTemplate: "你是 MemoTask 的整理助手。"
+  promptTemplate: DEFAULT_PROMPT
 };
 
 export function useMemoTaskState(client: ApiClient = apiClient): AppState {
@@ -180,6 +181,26 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
       void loadMemoDetail(routeMemoId);
     }
   }, [page, routeMemoId, authMode]);
+
+  useEffect(() => {
+    if (authMode !== "authenticated") {
+      return;
+    }
+
+    function refreshActivePage() {
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+      void refreshPageData(page, routeMemoId);
+    }
+
+    window.addEventListener("focus", refreshActivePage);
+    document.addEventListener("visibilitychange", refreshActivePage);
+    return () => {
+      window.removeEventListener("focus", refreshActivePage);
+      document.removeEventListener("visibilitychange", refreshActivePage);
+    };
+  }, [authMode, historyQuery, page, routeMemoId]);
 
   useEffect(() => {
     if (authMode !== "authenticated" || page !== "capture" || !draft.content.trim()) {
@@ -768,6 +789,24 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
         promptTemplate: settings.promptTemplate
       });
     });
+  }
+
+  async function refreshPageData(page: Page, memoId: string | null) {
+    if (page === "memos") {
+      await refreshMemos();
+      return;
+    }
+    if (page === "history") {
+      await loadHistory(historyQuery);
+      return;
+    }
+    if (page === "memoDetail" && memoId) {
+      await loadMemoDetail(memoId);
+      return;
+    }
+    if (page === "capture") {
+      await refreshDrafts();
+    }
   }
 
   async function saveAiSettings() {

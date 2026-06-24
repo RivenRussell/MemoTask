@@ -40,7 +40,6 @@ export function MemosPage({
     <div className="content-grid memos-grid">
       {memos.length === 0 ? (
         <section className="soft-card intro-card empty-memo-card">
-          <img src="/assets/ui/empty-memos-cloud.png" alt="" aria-hidden="true" />
           <h2>还没有 Memo</h2>
         </section>
       ) : (

@@ -336,12 +336,6 @@ img {
   text-align: center;
 }
 
-.empty-memo-card img {
-  width: min(76%, 280px);
-  opacity: 0.96;
-  filter: drop-shadow(0 18px 34px rgba(148, 163, 184, 0.14));
-}
-
 .empty-memo-card h2 {
   font-size: 24px;
 }

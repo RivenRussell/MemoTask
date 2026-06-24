@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import App from "../../src/App";
@@ -16,6 +16,7 @@ describe("MemoTask app shell", () => {
     expect(await screen.findByRole("heading", { name: "队列" })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/memos");
     expect(screen.getByText("还没有 Memo")).toBeInTheDocument();
+    expect(document.querySelector(".empty-memo-card img")).toBeNull();
     expect(screen.queryByText("当前 Memo 队列")).not.toBeInTheDocument();
     expect(screen.queryByText("Memo 卡片预览")).not.toBeInTheDocument();
     expect(screen.queryByText("Today")).not.toBeInTheDocument();
@@ -76,11 +77,34 @@ describe("MemoTask app shell", () => {
     expect(await screen.findByRole("heading", { name: "设置" })).toBeInTheDocument();
     expect(within(primaryNav).getByRole("button", { name: "设置" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByLabelText("模型")).toHaveValue("");
+    expect((screen.getByLabelText("Prompt") as HTMLTextAreaElement).value).toContain("输出必须是 JSON");
 
     await clickPromise;
     expect(await screen.findByLabelText("接口地址")).toHaveValue("");
     expect(requestedUrls.filter((url) => url.includes("/api/ai/settings"))).toHaveLength(1);
     expect(requestedUrls.filter((url) => url.includes("/api/sync/status"))).toHaveLength(1);
+  });
+
+  it("refreshes the queue when the signed-in user returns to the page", async () => {
+    window.history.pushState({}, "", "/");
+    const client = createUiTestClient();
+    render(<App client={client} />);
+
+    expect(await screen.findByText("还没有 Memo")).toBeInTheDocument();
+
+    await client.publishMemo({
+      title: "安卓端新增 Memo",
+      content: "同一账号在另一端发布的内容",
+      todos: []
+    });
+
+    expect(screen.queryByText("安卓端新增 Memo")).not.toBeInTheDocument();
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    });
+
+    expect(await screen.findByText("安卓端新增 Memo")).toBeInTheDocument();
   });
 
   it("opens direct routes for capture, settings, history, and memo detail", async () => {
