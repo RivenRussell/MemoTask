@@ -1,3 +1,4 @@
+import { Eye, EyeOff, KeyRound, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { AuthMode } from "../state/app-state";
@@ -225,10 +226,44 @@ export function AuthPage({
 function AuthFrame({ title, children }: { title: string; children: ReactNode }) {
   return (
     <main className="auth-shell">
-      <section className="soft-card auth-card">
-        <p className="section-kicker">MemoTask 账号</p>
-        <h1>{title}</h1>
-        {children}
+      <img className="auth-background-asset auth-background-corner" src="/assets/ui/corner-fluid-shapes.png" alt="" aria-hidden="true" />
+      <img className="auth-background-asset auth-background-glow" src="/assets/ui/top-breathing-glow.png" alt="" aria-hidden="true" />
+      <section className="auth-layout" aria-label="MemoTask 账号">
+        <aside className="auth-visual-panel" aria-hidden="true">
+          <div className="brand-mark auth-brand-mark">
+            <div className="brand-icon">M</div>
+            <div>
+              <p>MemoTask</p>
+            </div>
+          </div>
+          <div className="auth-orb-stage">
+            <img className="auth-orb-asset" src="/assets/ui/ai-magic-orb.png" alt="" aria-hidden="true" />
+            <div className="auth-floating-icons">
+              <span>
+                <Mail size={18} />
+              </span>
+              <span>
+                <ShieldCheck size={18} />
+              </span>
+              <span>
+                <LockKeyhole size={18} />
+              </span>
+              <span>
+                <KeyRound size={18} />
+              </span>
+            </div>
+          </div>
+          <div className="auth-visual-dots">
+            <span />
+            <span />
+            <span />
+          </div>
+        </aside>
+        <section className="soft-card auth-card">
+          <p className="section-kicker">MemoTask 账号</p>
+          <h1>{title}</h1>
+          {children}
+        </section>
       </section>
     </main>
   );
@@ -249,13 +284,14 @@ function PasswordField({
   onPasswordChange: (password: string) => void;
   onToggleShow: () => void;
 }) {
+  const Icon = showPassword ? EyeOff : Eye;
   return (
     <>
       <label htmlFor={id}>{label}</label>
       <div className="password-field">
         <input id={id} type={showPassword ? "text" : "password"} value={password} onChange={(event) => onPasswordChange(event.target.value)} />
-        <button className="text-action password-toggle" type="button" onClick={onToggleShow}>
-          {showPassword ? "隐藏密码" : "显示密码"}
+        <button className="text-action password-toggle" type="button" aria-label={showPassword ? "隐藏密码" : "显示密码"} onClick={onToggleShow}>
+          <Icon size={18} aria-hidden="true" />
         </button>
       </div>
     </>

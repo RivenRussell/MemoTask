@@ -47,6 +47,39 @@ const pageSpecs: PageSpec[] = [
   }
 ];
 
+const authPageSpecs: PageSpec[] = [
+  {
+    path: "/login",
+    label: "auth-login",
+    heading: "登录 MemoTask",
+    requiredTexts: ["MemoTask 账号", "邮箱", "密码", "创建账号", "忘记密码"]
+  },
+  {
+    path: "/signup",
+    label: "auth-signup",
+    heading: "创建 MemoTask 账号",
+    requiredTexts: ["MemoTask 账号", "邮箱", "密码", "确认密码", "至少 6 位"]
+  },
+  {
+    path: "/verify-email",
+    label: "auth-verify",
+    heading: "验证邮箱",
+    requiredTexts: ["MemoTask 账号", "邮箱验证码", "重新发送验证码", "返回登录"]
+  },
+  {
+    path: "/forgot-password",
+    label: "auth-forgot",
+    heading: "找回密码",
+    requiredTexts: ["MemoTask 账号", "邮箱", "发送重置邮件", "返回登录"]
+  },
+  {
+    path: "/reset-password",
+    label: "auth-reset",
+    heading: "重置密码",
+    requiredTexts: ["MemoTask 账号", "新密码", "至少 6 位", "更新密码"]
+  }
+];
+
 test.beforeEach(async ({ page }) => {
   const repository = new MemoryRepository();
   await seedVisualQaData(repository);
@@ -70,6 +103,31 @@ for (const spec of pageSpecs) {
     await expect(page.getByText("升级")).toHaveCount(0);
     await expect(page.locator(".app-frame")).toBeVisible();
     await assertVisualIntegrity(page);
+
+    await mkdir(outputDir, { recursive: true });
+    await page.screenshot({
+      fullPage: true,
+      path: path.join(outputDir, `verified-${testInfo.project.name}-${spec.label}.png`)
+    });
+  });
+}
+
+for (const spec of authPageSpecs) {
+  test(`visual QA renders ${spec.label} with premium auth UI`, async ({ page }, testInfo) => {
+    await page.unroute("**/*");
+    await routeGuestApi(page);
+
+    await page.goto(spec.path);
+    await expect(page.getByRole("heading", { name: spec.heading, exact: true })).toBeVisible();
+    for (const text of spec.requiredTexts) {
+      await expectPageText(page, text);
+    }
+
+    await expect(page.locator(".auth-shell")).toBeVisible();
+    await expect(page.locator(".auth-visual-panel")).toBeVisible();
+    await expect(page.locator(".auth-orb-asset")).toBeVisible();
+    await expect(page.locator(".auth-background-asset")).toHaveCount(2);
+    await assertAuthVisualIntegrity(page);
 
     await mkdir(outputDir, { recursive: true });
     await page.screenshot({
@@ -225,6 +283,32 @@ async function routeAuthenticatedApi(page: Page, repository: MemoRepository, app
   });
 }
 
+async function routeGuestApi(page: Page) {
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    if (!pathname.startsWith("/api/")) {
+      await route.continue();
+      return;
+    }
+
+    if (pathname === "/api/auth/me") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ user: null })
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true })
+    });
+  });
+}
+
 async function seedDefaultSession(authRepository: MemoryAuthRepository, sessionToken: string): Promise<void> {
   await authRepository.createUser({
     id: "default",
@@ -341,6 +425,52 @@ async function assertVisualIntegrity(page: Page) {
     expect(result.mobileNavClearance).toBeGreaterThanOrEqual(24);
   }
   expect(result.oversizedCheckboxVisuals).toEqual([]);
+}
+
+async function assertAuthVisualIntegrity(page: Page) {
+  const result = await page.evaluate(() => {
+    const visible = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      const styles = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && styles.visibility !== "hidden" && styles.display !== "none";
+    };
+
+    const card = document.querySelector(".auth-card");
+    const visualPanel = document.querySelector(".auth-visual-panel");
+    const buttons = [...document.querySelectorAll(".auth-shell button")].filter(visible);
+    const overflowingControls = [...document.querySelectorAll(".auth-shell button, .auth-shell input")]
+      .filter(visible)
+      .filter((element) => {
+        const rect = element.getBoundingClientRect();
+        return (
+          rect.left < -1 ||
+          rect.right > window.innerWidth + 1 ||
+          element.scrollWidth > element.clientWidth + 2 ||
+          element.scrollHeight > element.clientHeight + 2
+        );
+      })
+      .map((element) => element.getAttribute("aria-label") || element.textContent?.trim() || element.tagName);
+
+    return {
+      backgroundColor: window.getComputedStyle(document.body).backgroundColor,
+      cardWidth: card?.getBoundingClientRect().width ?? 0,
+      visualPanelWidth: visualPanel?.getBoundingClientRect().width ?? 0,
+      rootChildren: document.querySelector("#root")?.children.length ?? 0,
+      horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      overflowingControls,
+      hasFullWidthPrimaryAction: buttons.some(
+        (button) => button.classList.contains("primary-action") && button.getBoundingClientRect().width > 240
+      )
+    };
+  });
+
+  expect(result.backgroundColor).toBe("rgb(248, 250, 252)");
+  expect(result.rootChildren).toBeGreaterThan(0);
+  expect(result.cardWidth).toBeGreaterThan(280);
+  expect(result.visualPanelWidth).toBeGreaterThan(0);
+  expect(result.horizontalOverflow).toBeLessThanOrEqual(1);
+  expect(result.overflowingControls).toEqual([]);
+  expect(result.hasFullWidthPrimaryAction).toBe(true);
 }
 
 async function expectMobileDetailLayout(page: Page) {

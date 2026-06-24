@@ -18,4 +18,4 @@ run_worker_first = ["/api/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "memotask-db"
-database_id = "<your-d1-database-id>"
+database_id = "3c84d13d-803f-41d3-ab97-292ba1500708"

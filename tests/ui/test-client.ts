@@ -11,6 +11,7 @@ import type { Memo } from "../../src/types";
 interface UiTestClientOptions {
   fetchAi?: (request: Request) => Promise<Response>;
   delayMs?: number;
+  delayForUrl?: (url: string) => number;
   onRequest?: (url: string) => void;
   initialMemos?: Memo[];
 }
@@ -42,8 +43,9 @@ export function createUiTestClient(options?: ((request: Request) => Promise<Resp
     const url = input instanceof Request ? input.url : input.toString();
     if (typeof options !== "function") {
       options?.onRequest?.(url);
-      if (options?.delayMs && !url.includes("/api/auth/")) {
-        await new Promise((resolve) => window.setTimeout(resolve, options.delayMs));
+      const delayMs = options?.delayForUrl?.(url) ?? options?.delayMs ?? 0;
+      if (delayMs > 0 && !url.includes("/api/auth/")) {
+        await new Promise((resolve) => window.setTimeout(resolve, delayMs));
       }
     }
     const requestHeaders = new Headers(input instanceof Request ? input.headers : init?.headers);

@@ -9,6 +9,15 @@ test("primary navigation gives visible feedback without waiting on page data", a
       return;
     }
 
+    if (requestUrl.pathname === "/api/auth/me") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(authenticatedUserResponse())
+      });
+      return;
+    }
+
     await new Promise((resolve) => setTimeout(resolve, 2_500));
     await route.fulfill({
       status: 200,
@@ -70,6 +79,15 @@ test("todo checkbox gives visible feedback without waiting on writes", async ({ 
     const isLocalApp = requestUrl.origin === "http://127.0.0.1:5173" || requestUrl.origin === "http://localhost:5173";
     if (!isLocalApp || !requestUrl.pathname.startsWith("/api/")) {
       await route.continue();
+      return;
+    }
+
+    if (requestUrl.pathname === "/api/auth/me") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(authenticatedUserResponse())
+      });
       return;
     }
 
@@ -181,4 +199,14 @@ function responseForApiPath(pathname: string, todoDone = false) {
   }
 
   return {};
+}
+
+function authenticatedUserResponse() {
+  return {
+    user: {
+      id: "default",
+      email: "local@memotask.test",
+      emailVerified: true
+    }
+  };
 }

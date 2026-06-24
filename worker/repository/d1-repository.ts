@@ -314,29 +314,35 @@ export class D1Repository implements MemoRepository {
   }
 
   async softDeleteHistoryMemos(userId: string, memoIds: string[], now: string): Promise<Memo[]> {
-    const deleted: Memo[] = [];
-    for (const id of memoIds) {
-      const memo = await this.findMemo(userId, id);
-      if (memo?.status === "history" && memo.deletedAt === null) {
-        const next = { ...memo, status: "deleted" as const, deletedAt: now, updatedAt: now };
-        await this.saveMemo(userId, next);
-        deleted.push(next);
-      }
+    const selected = await this.findMemosByIdsAndStatus(userId, memoIds, "history", true);
+    if (selected.length === 0) {
+      return [];
     }
-    return deleted;
+
+    await this.updateMemoStatuses(
+      userId,
+      selected.map((memo) => memo.id),
+      "deleted",
+      now,
+      now
+    );
+    return selected.map((memo) => ({ ...memo, status: "deleted", deletedAt: now, updatedAt: now }));
   }
 
   async restoreDeletedMemos(userId: string, memoIds: string[], now: string): Promise<Memo[]> {
-    const restored: Memo[] = [];
-    for (const id of memoIds) {
-      const memo = await this.findMemo(userId, id);
-      if (memo?.status === "deleted") {
-        const next = { ...memo, status: "history" as const, deletedAt: null, updatedAt: now };
-        await this.saveMemo(userId, next);
-        restored.push(next);
-      }
+    const selected = await this.findMemosByIdsAndStatus(userId, memoIds, "deleted", false);
+    if (selected.length === 0) {
+      return [];
     }
-    return restored;
+
+    await this.updateMemoStatuses(
+      userId,
+      selected.map((memo) => memo.id),
+      "history",
+      now,
+      null
+    );
+    return selected.map((memo) => ({ ...memo, status: "history", deletedAt: null, updatedAt: now }));
   }
 
   async listExportableMemos(userId: string): Promise<Memo[]> {
@@ -423,6 +429,51 @@ export class D1Repository implements MemoRepository {
       .all<TodoRow>();
     const todosByMemo = groupTodos(todos.results.map(mapTodo));
     return rows.map((row) => ({ ...mapMemo(row), todos: todosByMemo.get(row.id) ?? [] }));
+  }
+
+  private async findMemosByIdsAndStatus(
+    userId: string,
+    memoIds: string[],
+    status: Memo["status"],
+    requireNotDeleted: boolean
+  ): Promise<Memo[]> {
+    const orderedIds = [...new Set(memoIds)];
+    if (orderedIds.length === 0) {
+      return [];
+    }
+
+    const placeholders = orderedIds.map(() => "?").join(", ");
+    const rows = await this.db
+      .prepare(
+        `SELECT * FROM memos
+         WHERE user_id = ?
+           AND status = ?
+           ${requireNotDeleted ? "AND deleted_at IS NULL" : ""}
+           AND id IN (${placeholders})`
+      )
+      .bind(userId, status, ...orderedIds)
+      .all<MemoRow>();
+    const memos = await this.hydrateMemos(rows.results);
+    const byId = new Map(memos.map((memo) => [memo.id, memo]));
+    return orderedIds.map((id) => byId.get(id)).filter((memo): memo is Memo => Boolean(memo));
+  }
+
+  private async updateMemoStatuses(
+    userId: string,
+    memoIds: string[],
+    status: Memo["status"],
+    updatedAt: string,
+    deletedAt: string | null
+  ): Promise<void> {
+    const placeholders = memoIds.map(() => "?").join(", ");
+    await this.db
+      .prepare(
+        `UPDATE memos
+         SET status = ?, deleted_at = ?, updated_at = ?
+         WHERE user_id = ? AND id IN (${placeholders})`
+      )
+      .bind(status, deletedAt, updatedAt, userId, ...memoIds)
+      .run();
   }
 
   private async nextFrontSortOrder(userId: string): Promise<number> {

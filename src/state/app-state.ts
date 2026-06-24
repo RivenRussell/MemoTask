@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiClient, apiClient } from "../api/client";
 import type { AiSettingsView, AuthUserView, DraftTodoInput, Memo, PublishMemoInput, SyncStatusView } from "../types";
 
@@ -134,6 +134,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   const [resetToken, setResetToken] = useState(new URLSearchParams(window.location.search).get("token") ?? "");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const historyRequestIdRef = useRef(0);
   const activePrimary = page === "history" || page === "memoDetail" ? "memos" : page;
   const title = useMemo(() => pageTitle(page), [page]);
 
@@ -712,8 +713,13 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   }
 
   async function loadHistory(query: string) {
+    const requestId = historyRequestIdRef.current + 1;
+    historyRequestIdRef.current = requestId;
     await run(async () => {
-      setHistoryMemos(query.trim() ? await client.searchHistory(query) : await client.listHistory());
+      const nextHistoryMemos = query.trim() ? await client.searchHistory(query) : await client.listHistory();
+      if (requestId === historyRequestIdRef.current) {
+        setHistoryMemos(nextHistoryMemos);
+      }
     });
   }
 

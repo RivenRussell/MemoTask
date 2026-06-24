@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import App from "../../src/App";
@@ -84,6 +84,47 @@ describe("MemoTask settings and history workflows", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "撤销删除" }));
     expect(await screen.findByText("部署资料")).toBeInTheDocument();
+  });
+
+  it("keeps the newest history search results when older searches return later", async () => {
+    const alphaMemo = {
+      ...createMemo("history-alpha", "Alpha 最新结果", []),
+      status: "history" as const,
+      historyReason: "archived" as const,
+      historyAt: "2026-06-23T09:30:00.000Z"
+    };
+    const archiveMemo = {
+      ...createMemo("history-archive", "Archive 旧请求结果", []),
+      status: "history" as const,
+      historyReason: "archived" as const,
+      historyAt: "2026-06-23T09:29:00.000Z"
+    };
+    window.history.pushState({}, "", "/history");
+    render(
+      <App
+        client={createUiTestClient({
+          initialMemos: [alphaMemo, archiveMemo],
+          delayForUrl: (url) => {
+            const query = new URL(url, "http://localhost").searchParams.get("q") ?? "";
+            return query === "a" ? 700 : 0;
+          }
+        })}
+      />
+    );
+
+    expect(await screen.findByText("Alpha 最新结果")).toBeInTheDocument();
+    const searchInput = screen.getByLabelText("搜索历史");
+
+    await userEvent.type(searchInput, "a");
+    await userEvent.type(searchInput, "lpha");
+
+    expect(await screen.findByText("Alpha 最新结果")).toBeInTheDocument();
+    expect(screen.queryByText("Archive 旧请求结果")).not.toBeInTheDocument();
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 800));
+    });
+    expect(screen.getByText("Alpha 最新结果")).toBeInTheDocument();
+    expect(screen.queryByText("Archive 旧请求结果")).not.toBeInTheDocument();
   });
 
   it("shows settings save feedback immediately even when the server is slow", async () => {
