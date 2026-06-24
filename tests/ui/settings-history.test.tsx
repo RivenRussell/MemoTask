@@ -10,8 +10,11 @@ describe("MemoTask settings and history workflows", () => {
     const primaryNav = await findPrimaryNav();
 
     await userEvent.click(within(primaryNav).getByRole("button", { name: "设置" }));
+    expect(await screen.findByLabelText("接口地址")).toHaveValue("");
+    expect(screen.getByLabelText("接口地址")).toHaveAttribute("placeholder", "https://api.deepseek.com");
+    expect(screen.getByLabelText("模型")).toHaveValue("");
+    expect(screen.getByLabelText("模型")).toHaveAttribute("placeholder", "deepseek-v4-pro");
     await userEvent.type(screen.getByLabelText("接口地址"), "https://api.example.com/v1");
-    await userEvent.clear(screen.getByLabelText("模型"));
     await userEvent.type(screen.getByLabelText("模型"), "dsv4-pro");
     await userEvent.type(screen.getByLabelText("API 密钥"), "test-key-1234567890abcdef");
     await userEvent.clear(screen.getByLabelText("Prompt"));
@@ -29,6 +32,31 @@ describe("MemoTask settings and history workflows", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "导出 JSON" }));
     expect(await screen.findByText("JSON 导出已生成")).toBeInTheDocument();
+  });
+
+  it("keeps the signed-in account's AI settings after logout and login", async () => {
+    render(<App client={createUiTestClient(async () => Response.json({ choices: [{ message: { content: "ok" } }] }))} />);
+    const primaryNav = await findPrimaryNav();
+
+    await userEvent.click(within(primaryNav).getByRole("button", { name: "设置" }));
+    await userEvent.type(await screen.findByLabelText("接口地址"), "https://api.persisted.example/v1");
+    await userEvent.type(screen.getByLabelText("模型"), "persisted-model");
+    await userEvent.type(screen.getByLabelText("API 密钥"), "persisted-key-1234567890");
+    await userEvent.click(screen.getByRole("button", { name: "保存设置" }));
+    expect(await screen.findByText("当前已保存：pers...7890")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "退出登录" }));
+    expect(await screen.findByRole("heading", { name: "登录 MemoTask" })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText("邮箱"), "local@memotask.test");
+    await userEvent.type(screen.getByLabelText("密码"), "memo123");
+    await userEvent.click(screen.getByRole("button", { name: "登录" }));
+
+    const navAfterLogin = await findPrimaryNav();
+    await userEvent.click(within(navAfterLogin).getByRole("button", { name: "设置" }));
+    expect(await screen.findByDisplayValue("https://api.persisted.example/v1")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("persisted-model")).toBeInTheDocument();
+    expect(screen.getByText("当前已保存：pers...7890")).toBeInTheDocument();
+    expect(screen.getByLabelText("API 密钥")).toHaveValue("");
   });
 
   it("searches history, bulk deletes a memo, and restores it with undo", async () => {
@@ -62,7 +90,7 @@ describe("MemoTask settings and history workflows", () => {
     window.history.pushState({}, "", "/settings");
     render(<App client={createUiTestClient({ delayMs: 2500 })} />);
 
-    expect(await screen.findByDisplayValue("deepseek-v4-pro", undefined, { timeout: 4_000 })).toBeInTheDocument();
+    expect(await screen.findByLabelText("模型", undefined, { timeout: 4_000 })).toHaveValue("");
     await userEvent.type(screen.getByLabelText("接口地址"), "https://api.example.com/v1");
 
     await userEvent.click(screen.getByRole("button", { name: "保存设置" }));

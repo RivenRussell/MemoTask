@@ -107,8 +107,8 @@ function responseForApiPath(pathname: string, todoDone = false) {
   if (pathname === "/api/ai/settings") {
     return {
       settings: {
-        baseUrl: "https://api.deepseek.com",
-        model: "deepseek-v4-pro",
+        baseUrl: "",
+        model: "",
         apiKeyMask: null,
         promptTemplate: "你是 MemoTask 的整理助手。"
       }

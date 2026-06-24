@@ -38,7 +38,12 @@ export function SettingsPage({
           onChange={(event) => onUpdateDraft({ baseUrl: event.target.value })}
         />
         <label htmlFor="model">模型</label>
-        <input id="model" value={draft.model} onChange={(event) => onUpdateDraft({ model: event.target.value })} />
+        <input
+          id="model"
+          placeholder="deepseek-v4-pro"
+          value={draft.model}
+          onChange={(event) => onUpdateDraft({ model: event.target.value })}
+        />
         <label htmlFor="api-key">API 密钥</label>
         <input
           id="api-key"

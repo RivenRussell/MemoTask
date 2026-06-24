@@ -8,7 +8,15 @@ import type { MemoRepository } from "../../worker/repository/types";
 
 const outputDir = path.join(process.cwd(), "output", "visual-qa");
 
-const pageSpecs = [
+interface PageSpec {
+  path: string;
+  label: string;
+  heading: string;
+  requiredTexts: string[];
+  requiredValues?: string[];
+}
+
+const pageSpecs: PageSpec[] = [
   {
     path: "/memos",
     label: "memos",
@@ -25,8 +33,7 @@ const pageSpecs = [
     path: "/settings",
     label: "settings",
     heading: "设置",
-    requiredTexts: ["AI API", "接口地址", "同步状态：正常", "Prompt"],
-    requiredValues: ["deepseek-v4-pro"]
+    requiredTexts: ["AI API", "接口地址", "同步状态：正常", "Prompt"]
   },
   {
     path: "/history",

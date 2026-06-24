@@ -1,6 +1,6 @@
 import { screen } from "@testing-library/react";
 import { createApi } from "../../worker/api";
-import { createSessionCookie, hashToken } from "../../worker/auth/crypto";
+import { createSessionCookie, hashPassword, hashToken } from "../../worker/auth/crypto";
 import { MemoryAuthRepository } from "../../worker/auth/memory-auth-repository";
 import { AuthService } from "../../worker/auth/service";
 import type { EmailMessage, EmailSender } from "../../worker/auth/types";
@@ -36,7 +36,7 @@ export function createUiTestClient(options?: ((request: Request) => Promise<Resp
     appEncryptionKey: "test-encryption-key-for-ui",
     fetchAi
   });
-  const cookie = createSessionCookie(sessionToken, "2099-01-01T00:00:00.000Z").split(";")[0];
+  let cookie = createSessionCookie(sessionToken, "2099-01-01T00:00:00.000Z").split(";")[0];
   const fetcher: typeof fetch = async (input, init) => {
     await authReady;
     const url = input instanceof Request ? input.url : input.toString();
@@ -47,8 +47,15 @@ export function createUiTestClient(options?: ((request: Request) => Promise<Resp
       }
     }
     const requestHeaders = new Headers(input instanceof Request ? input.headers : init?.headers);
-    requestHeaders.set("cookie", cookie);
-    return app.request(url, { ...init, headers: requestHeaders });
+    if (cookie) {
+      requestHeaders.set("cookie", cookie);
+    }
+    const response = await app.request(url, { ...init, headers: requestHeaders });
+    const setCookie = response.headers.get("set-cookie");
+    if (setCookie) {
+      cookie = setCookie.includes("Max-Age=0") ? "" : setCookie.split(";")[0];
+    }
+    return response;
   };
 
   return new ApiClient(fetcher);
@@ -62,7 +69,7 @@ async function seedDefaultSession(authRepository: MemoryAuthRepository, sessionT
   await authRepository.createUser({
     id: "default",
     email: "local@memotask.test",
-    passwordHash: "test-only",
+    passwordHash: await hashPassword("memo123"),
     emailVerifiedAt: "2026-06-22T12:00:00.000Z",
     createdAt: "2026-06-22T12:00:00.000Z",
     updatedAt: "2026-06-22T12:00:00.000Z"

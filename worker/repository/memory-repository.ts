@@ -334,7 +334,7 @@ export class MemoryRepository implements MemoRepository {
     const settings = {
       ...existing,
       baseUrl: input.baseUrl.trim(),
-      model: input.model.trim() || DEFAULT_AI_MODEL,
+      model: input.model.trim(),
       encryptedApiKey: input.encryptedApiKey ?? existing.encryptedApiKey,
       apiKeyMask: input.apiKeyMask ?? existing.apiKeyMask,
       promptTemplate: input.promptTemplate,
@@ -380,8 +380,8 @@ export class MemoryRepository implements MemoRepository {
   }
 }
 
-export const DEFAULT_AI_BASE_URL = "https://api.deepseek.com";
-export const DEFAULT_AI_MODEL = "deepseek-v4-pro";
+export const DEFAULT_AI_BASE_URL = "";
+export const DEFAULT_AI_MODEL = "";
 
 function createDefaultAiSettings(userId: string, now: string): AiSettings {
   return {

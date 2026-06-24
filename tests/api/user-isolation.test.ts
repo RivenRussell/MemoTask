@@ -148,8 +148,8 @@ describe("user data isolation", () => {
 
     expect(bobHistory.memos).toEqual([]);
     expect(bobExport.memos).toEqual([]);
-    expect(bobExport.aiSettings).toMatchObject({ baseUrl: "https://api.deepseek.com", hasApiKey: false });
-    expect(bobSettings.settings).toMatchObject({ baseUrl: "https://api.deepseek.com", model: "deepseek-v4-pro" });
+    expect(bobExport.aiSettings).toMatchObject({ baseUrl: "", model: "", hasApiKey: false });
+    expect(bobSettings.settings).toMatchObject({ baseUrl: "", model: "", apiKeyMask: null });
     expect(aliceSettings.settings).toMatchObject({ baseUrl: "https://api.alice.example/v1", model: "alice-model" });
     expect(aliceSync.status.updatedAt).toBe(now);
     expect(bobSync.status.updatedAt).toBe(now);

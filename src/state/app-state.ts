@@ -100,8 +100,8 @@ const emptyDraft: DraftState = {
 };
 
 const defaultAiSettingsDraft: AiSettingsDraft = {
-  baseUrl: "https://api.deepseek.com",
-  model: "deepseek-v4-pro",
+  baseUrl: "",
+  model: "",
   apiKey: "",
   promptTemplate: "你是 MemoTask 的整理助手。"
 };

@@ -28,6 +28,7 @@ describe("MemoTask capture draft and AI workflow", () => {
 
     await userEvent.click(within(primaryNav).getByRole("button", { name: "设置" }));
     await userEvent.type(screen.getByLabelText("接口地址"), "https://api.example.com/v1");
+    await userEvent.type(screen.getByLabelText("模型"), "dsv4-pro");
     await userEvent.type(screen.getByLabelText("API 密钥"), "test-key-1234567890abcdef");
     await userEvent.click(screen.getByRole("button", { name: "保存设置" }));
     expect(await screen.findByText("已保存 AI 设置")).toBeInTheDocument();

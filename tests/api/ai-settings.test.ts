@@ -25,8 +25,8 @@ describe("AI settings and analyze API", () => {
     const body = await json(response);
 
     expect(response.status).toBe(200);
-    expect(body.settings.baseUrl).toBe("https://api.deepseek.com");
-    expect(body.settings.model).toBe("deepseek-v4-pro");
+    expect(body.settings.baseUrl).toBe("");
+    expect(body.settings.model).toBe("");
     expect(body.settings.apiKeyMask).toBeNull();
     expect(JSON.stringify(body)).not.toContain("encrypted");
     expect(JSON.stringify(body)).not.toContain("sk-");
@@ -114,6 +114,7 @@ describe("AI settings and analyze API", () => {
 
     expect(response.status).toBe(400);
     expect(body.error.code).toBe("AI_UNAVAILABLE");
+    expect(body.error.message).toBe("请先在设置里为当前账号填写接口地址、模型名称和 API 密钥");
   });
 
   it("analyzes a draft and accepts JSON wrapped in markdown fences", async () => {

@@ -53,7 +53,10 @@ describe("MemoTask app shell", () => {
 
     await userEvent.click(within(primaryNav).getByRole("button", { name: "设置" }));
     expect(screen.getByRole("heading", { name: "设置" })).toBeInTheDocument();
-    expect(screen.getByDisplayValue("deepseek-v4-pro")).toBeInTheDocument();
+    expect(screen.getByLabelText("接口地址")).toHaveValue("");
+    expect(screen.getByLabelText("接口地址")).toHaveAttribute("placeholder", "https://api.deepseek.com");
+    expect(screen.getByLabelText("模型")).toHaveValue("");
+    expect(screen.getByLabelText("模型")).toHaveAttribute("placeholder", "deepseek-v4-pro");
 
     expect(screen.queryByText("日期")).not.toBeInTheDocument();
     expect(screen.queryByText("提醒")).not.toBeInTheDocument();
@@ -70,10 +73,10 @@ describe("MemoTask app shell", () => {
 
     expect(await screen.findByRole("heading", { name: "设置" })).toBeInTheDocument();
     expect(within(primaryNav).getByRole("button", { name: "设置" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByDisplayValue("deepseek-v4-pro")).toBeInTheDocument();
+    expect(screen.getByLabelText("模型")).toHaveValue("");
 
     await clickPromise;
-    await screen.findByDisplayValue("https://api.deepseek.com");
+    expect(await screen.findByLabelText("接口地址")).toHaveValue("");
     expect(requestedUrls.filter((url) => url.includes("/api/ai/settings"))).toHaveLength(1);
     expect(requestedUrls.filter((url) => url.includes("/api/sync/status"))).toHaveLength(1);
   });
@@ -85,7 +88,7 @@ describe("MemoTask app shell", () => {
 
     view = renderAt("/settings");
     expect(await screen.findByRole("heading", { name: "设置" })).toBeInTheDocument();
-    expect(await screen.findByDisplayValue("https://api.deepseek.com")).toBeInTheDocument();
+    expect(await screen.findByLabelText("接口地址")).toHaveValue("");
     view.unmount();
 
     view = renderAt("/history");

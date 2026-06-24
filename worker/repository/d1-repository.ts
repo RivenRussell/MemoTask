@@ -367,7 +367,7 @@ export class D1Repository implements MemoRepository {
     const settings: AiSettings = {
       ...existing,
       baseUrl: input.baseUrl.trim(),
-      model: input.model.trim() || DEFAULT_AI_MODEL,
+      model: input.model.trim(),
       encryptedApiKey: input.encryptedApiKey ?? existing.encryptedApiKey,
       apiKeyMask: input.apiKeyMask ?? existing.apiKeyMask,
       promptTemplate: input.promptTemplate,

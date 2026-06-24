@@ -3,7 +3,7 @@ import type { AuthService } from "./auth/service";
 import { EmailConfigurationError, EmailDeliveryError } from "./auth/email";
 import { AuthError, type PublicAuthUser } from "./auth/types";
 import { moveMemoToHistory, restoreMemoFromHistory, shouldAutoArchiveMemo, toggleTodoStatus } from "./domain/state-machines";
-import { DEFAULT_AI_MODEL, DEFAULT_PROMPT, MemoryRepository } from "./repository/memory-repository";
+import { DEFAULT_PROMPT, MemoryRepository } from "./repository/memory-repository";
 import type { AiSettings, MemoRepository } from "./repository/types";
 
 interface ApiOptions {
@@ -15,6 +15,7 @@ interface ApiOptions {
 }
 
 const undoOperations = new Map<string, { memoIds: string[]; expiresAt: string }>();
+const AI_SETTINGS_REQUIRED_MESSAGE = "请先在设置里为当前账号填写接口地址、模型名称和 API 密钥";
 
 function getNow(options?: ApiOptions): string {
   return options?.now?.() ?? new Date().toISOString();
@@ -659,7 +660,7 @@ export function createApi(options: ApiOptions = {}) {
       userId,
       {
         baseUrl: body.baseUrl ?? "",
-        model: body.model || DEFAULT_AI_MODEL,
+        model: body.model ?? "",
         encryptedApiKey,
         apiKeyMask,
         promptTemplate: body.promptTemplate || DEFAULT_PROMPT
@@ -682,8 +683,8 @@ export function createApi(options: ApiOptions = {}) {
     if (auth.response) return auth.response;
     const userId = auth.user?.id ?? "default";
     const settings = await repository.getAiSettings(userId, getNow(options));
-    if (!settings.baseUrl || !settings.encryptedApiKey) {
-      return context.json({ error: { code: "AI_UNAVAILABLE", message: "请先在 Settings 配置 AI API" } }, 400);
+    if (!settings.baseUrl || !settings.model || !settings.encryptedApiKey) {
+      return context.json({ error: { code: "AI_UNAVAILABLE", message: AI_SETTINGS_REQUIRED_MESSAGE } }, 400);
     }
 
     const apiKey = await getPlainApiKey(settings, options);
@@ -713,8 +714,8 @@ export function createApi(options: ApiOptions = {}) {
     const userId = auth.user?.id ?? "default";
     const body = await readJson<{ draftId?: string }>(context);
     const settings = await repository.getAiSettings(userId, getNow(options));
-    if (!settings.baseUrl || !settings.encryptedApiKey) {
-      return context.json({ error: { code: "AI_UNAVAILABLE", message: "请先在 Settings 配置 AI API" } }, 400);
+    if (!settings.baseUrl || !settings.model || !settings.encryptedApiKey) {
+      return context.json({ error: { code: "AI_UNAVAILABLE", message: AI_SETTINGS_REQUIRED_MESSAGE } }, 400);
     }
 
     const draft = body.draftId ? await repository.findMemo(userId, body.draftId) : null;
