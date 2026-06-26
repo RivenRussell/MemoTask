@@ -1,6 +1,6 @@
 # Cloudflare 部署指南
 
-本文档记录 MemoTask v2.0.0 在 Cloudflare 上的核心部署方式。它面向后续复现、迁移、回滚和排查问题，不包含真实账号编号、真实密钥或私人控制台链接。
+本文档记录 MemoTask v3.1.0 在 Cloudflare 上的核心部署方式。它面向后续复现、迁移、回滚和排查问题，不包含真实账号编号、真实密钥或私人控制台链接。
 
 当前生产地址：
 
@@ -25,7 +25,7 @@ Cloudflare Worker：memotask
   |-- Resend：发送邮箱验证码和密码重置邮件
 ```
 
-v2.0.0 使用应用自己的账号系统。Cloudflare Access 可以继续作为额外外层保护，但不是必须项。
+v3.1.0 使用应用自己的账号系统。Cloudflare Access 可以继续作为额外外层保护，但不是必须项。Windows 桌面端和 Android APK 仍然请求同一个 Worker API，因此 Cloudflare 端是三端共享的数据入口。
 
 ## 当前资源
 
@@ -160,6 +160,7 @@ npm run db:migrate:remote
 ```text
 migrations/0001_initial.sql
 migrations/0002_auth.sql
+migrations/0003_clear_default_ai_key.sql
 ```
 
 验证远程表：
@@ -215,7 +216,7 @@ APP_BASE_URL=https://memotask.example.com
 
 ## Resend 邮件配置
 
-MemoTask v2.0.0 需要邮件能力完成注册验证和密码找回。当前建议使用 Resend。
+MemoTask v3.1.0 需要邮件能力完成注册验证和密码找回。当前建议使用 Resend。
 
 配置步骤：
 
@@ -405,13 +406,36 @@ Worker 代码期望通过 `env.DB` 访问数据库。
 
 ### Cloudflare Access 和应用登录的关系
 
-MemoTask v2.0.0 已经有应用级账号系统。Cloudflare Access 可以选用：
+MemoTask v3.1.0 已经有应用级账号系统。Cloudflare Access 可以选用：
 
 - 如果只想依赖 MemoTask 自己的注册和登录，保持 Worker 自定义域名公开即可。
 - 如果想在外面再加一道门，可以给 `memotask.rrwks.cn` 配置 Cloudflare Access。
 - 开启 Access 后，用户需要先通过 Cloudflare，再进入 MemoTask 登录页。
 
 移动端测试时，如果 Cloudflare Access 登录不方便，可以临时关闭 Access，仅依赖 MemoTask 应用登录。
+
+## Windows 和 Android 本地应用接入
+
+Windows 安装包和 Android APK 会把 React/Vite 的 `dist` 构建产物打包进本地应用，但数据和接口仍然使用 Cloudflare Worker：
+
+```text
+Windows Electron / Android Capacitor
+  |
+  | HTTPS 请求 /api/*
+  v
+https://memotask.rrwks.cn
+  |
+  v
+Cloudflare Worker + D1
+```
+
+关键点：
+
+- Web 端默认使用同源 `/api/*`。
+- Desktop 和 Android 构建模式默认使用 `https://memotask.rrwks.cn`。
+- 如果你部署到自己的域名，需要在 `.env` 或构建环境中设置 `VITE_API_BASE_URL=https://your-domain.example.com`，然后重新运行 `npm run desktop:build` 或 `npm run android:apk`。
+- 本地应用登录后使用 Worker 返回的 app session token 访问 API；网页端仍使用 HttpOnly Cookie。
+- CORS 需要允许受控 app origin，例如 `http://127.0.0.1:*`、`https://localhost` 和 `capacitor://localhost`。当前 Worker 已内置这些受控来源判断。
 
 ## GitHub 发布前检查
 

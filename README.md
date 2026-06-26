@@ -111,6 +111,34 @@ Memo 功能：
 - Windows 桌面端安装后可从托盘或 `Ctrl + Alt + M` 快速打开记录窗口。
 - Android 端可从系统分享菜单接收 `text/plain` 文本和链接。
 - 网络异常导致发布失败时，记录内容会进入本地草稿列表，稍后可重新载入。
+- Memo 详情页优先显示标题和摘要，再显示 Todo 列表；长 Todo 会自动换行，移动端滚动到底部也能看到最后一条 Todo。
+
+## 下载与安装
+
+v3.1.0 的安装包会放在 GitHub Releases 的 `v3.1.0` 页面中：
+
+- Windows：`MemoTask Setup 3.1.0.exe`
+- Android：`app-release.apk`
+
+Windows 安装：
+
+1. 下载 `MemoTask Setup 3.1.0.exe`。
+2. 双击安装。
+3. 如果 Windows SmartScreen 提示未知发布者，选择“更多信息”后再选择“仍要运行”。
+4. 安装完成后从开始菜单、桌面快捷方式或系统托盘打开 MemoTask。
+
+Android 安装：
+
+1. 下载 `app-release.apk` 到手机。
+2. 在系统设置中允许当前文件管理器或浏览器“安装未知来源应用”。
+3. 打开 APK 并安装。
+4. 如果提示签名冲突，先卸载旧版 MemoTask，再安装新版。Memo 数据保存在 Cloudflare D1 中，账号数据不会因为卸载本地应用而删除；但本机未同步的失败草稿可能会随卸载丢失。
+
+网页端不需要安装，访问生产地址即可：
+
+```text
+https://memotask.rrwks.cn/login
+```
 
 ## 技术架构
 
@@ -382,6 +410,19 @@ Android 端：
 - 支持系统分享菜单接收文本和链接。
 - 支持 Android 返回键：记录、设置、历史和详情页优先返回队列页。
 
+## GitHub Release 资产
+
+不要把安装包或 APK 直接提交到 Git。源码仓库只保存可复现构建所需的核心代码、配置、迁移、测试和文档。
+
+发布时应将这些文件上传到 GitHub Releases：
+
+```text
+release/desktop/MemoTask Setup 3.1.0.exe
+android/app/build/outputs/apk/release/app-release.apk
+```
+
+当前 `.gitignore` 会忽略 `release/`、`dist/`、`output/`、`.wrangler/`、测试输出和本地环境文件。Android 子目录还会忽略 APK、AAB、keystore、本机 SDK 路径和 Capacitor 生成的 WebView 静态资源。
+
 ## 主要接口
 
 健康检查：
@@ -453,7 +494,7 @@ POST /api/ai/analyze-draft
 - 人工智能接口密钥进入 D1 前会用 `APP_ENCRYPTION_KEY` 加密。
 - 导出数据不会包含明文人工智能接口密钥。
 - 邮件验证码和密码重置令牌都有有效期。
-- Cloudflare Access 可以作为额外外层保护，但 v2.0.0 的主要账号边界是应用自己的登录系统。
+- Cloudflare Access 可以作为额外外层保护，但 v3.1.0 的主要账号边界是应用自己的登录系统。
 
 ## 版本管理
 
@@ -472,7 +513,7 @@ codex/v3-app-packaging  v3 桌面端与 Android 打包分支
 v1                      已存在的 v1 标签
 v2.0.0                  v2 正式标签
 v3.0.0                  v3 桌面端与 Android 打包正式标签
-v3.1.0                  v3.1 同步与草稿体验正式标签，发布时创建
+v3.1.0                  v3.1 同步与草稿体验正式标签
 ```
 
 查看版本历史：
@@ -511,3 +552,4 @@ git switch --detach v2.0.0
 
 - [Cloudflare 部署指南](docs/cloudflare-setup.md)
 - [版本历史与回滚说明](docs/version-history.md)
+- [MemoTask v3.1.0 发布说明](docs/release-v3.1.0.md)
