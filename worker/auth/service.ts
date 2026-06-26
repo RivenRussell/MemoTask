@@ -38,6 +38,7 @@ interface ResetPasswordInput {
 interface AuthResult {
   user: PublicAuthUser;
   sessionCookie: string;
+  sessionToken: string;
 }
 
 interface VerificationResult {
@@ -146,6 +147,10 @@ export class AuthService {
       return null;
     }
 
+    return this.resolveSessionToken(token, now);
+  }
+
+  async resolveSessionToken(token: string, now: string): Promise<PublicAuthUser | null> {
     const session = await this.options.repository.findSessionByTokenHash(await hashToken(token));
     if (!session || isExpired(session.expiresAt, now)) {
       return null;
@@ -162,14 +167,20 @@ export class AuthService {
 
   async logout(cookieHeader: string | null | undefined): Promise<{ sessionCookie: string }> {
     const token = readSessionToken(cookieHeader);
-    if (token) {
-      const session = await this.options.repository.findSessionByTokenHash(await hashToken(token));
-      if (session) {
-        await this.options.repository.deleteSession(session.id);
-      }
-    }
+    await this.logoutToken(token);
 
     return { sessionCookie: createExpiredSessionCookie() };
+  }
+
+  async logoutToken(token: string | null | undefined): Promise<void> {
+    if (!token) {
+      return;
+    }
+
+    const session = await this.options.repository.findSessionByTokenHash(await hashToken(token));
+    if (session) {
+      await this.options.repository.deleteSession(session.id);
+    }
   }
 
   private async sendVerificationEmail(user: AuthUser, now: string): Promise<void> {
@@ -240,7 +251,8 @@ export class AuthService {
     await this.options.repository.createSession(session);
     return {
       user: publicUser(user),
-      sessionCookie: createSessionCookie(token, session.expiresAt)
+      sessionCookie: createSessionCookie(token, session.expiresAt),
+      sessionToken: token
     };
   }
 }

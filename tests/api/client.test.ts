@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ApiClient } from "../../src/api/client";
+import { ApiClient, resolveApiBaseUrl, resolveApiUrl } from "../../src/api/client";
 
 function jsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
@@ -9,6 +9,33 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
 }
 
 describe("frontend API client", () => {
+  it("keeps API paths relative when no app API base URL is configured", () => {
+    expect(resolveApiUrl("/api/auth/me")).toBe("/api/auth/me");
+  });
+
+  it("resolves API paths against the configured app API base URL", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({ memos: [] }));
+    const client = new ApiClient(fetchMock, { apiBaseUrl: "https://memotask.rrwks.cn" });
+
+    await client.listMemos();
+
+    expect(fetchMock).toHaveBeenCalledWith("https://memotask.rrwks.cn/api/memos", { credentials: "include" });
+  });
+
+  it("normalizes trailing slashes when resolving app API URLs", () => {
+    expect(resolveApiUrl("/api/auth/me", "https://memotask.rrwks.cn/")).toBe("https://memotask.rrwks.cn/api/auth/me");
+  });
+
+  it("defaults desktop and android bundles to the production Worker origin", () => {
+    expect(resolveApiBaseUrl("desktop")).toBe("https://memotask.rrwks.cn");
+    expect(resolveApiBaseUrl("android")).toBe("https://memotask.rrwks.cn");
+    expect(resolveApiBaseUrl("production")).toBeUndefined();
+  });
+
+  it("lets explicit API base configuration override app bundle defaults", () => {
+    expect(resolveApiBaseUrl("desktop", "https://preview.example.com")).toBe("https://preview.example.com");
+  });
+
   it("includes browser credentials on every request so session cookies survive on mobile browsers", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({ memos: [] }));
     const client = new ApiClient(fetchMock);
@@ -16,6 +43,62 @@ describe("frontend API client", () => {
     await client.listMemos();
 
     expect(fetchMock).toHaveBeenCalledWith("/api/memos", { credentials: "include" });
+  });
+
+  it("stores app session tokens from auth responses and sends bearer auth on later app requests", async () => {
+    const store = new Map<string, string>();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ user: { id: "user-1", email: "owner@example.com", emailVerified: true }, appSessionToken: "app-token-1" }))
+      .mockResolvedValueOnce(jsonResponse({ memos: [] }));
+    const client = new ApiClient(fetchMock, {
+      apiBaseUrl: "https://memotask.rrwks.cn",
+      appSessionStorage: {
+        get: () => store.get("token") ?? null,
+        set: (token) => store.set("token", token),
+        clear: () => store.delete("token")
+      }
+    });
+
+    await client.login({ email: "owner@example.com", password: "memo123" });
+    await client.listMemos();
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "https://memotask.rrwks.cn/api/auth/login", {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json", "x-memotask-client": "app" },
+      body: JSON.stringify({ email: "owner@example.com", password: "memo123" })
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "https://memotask.rrwks.cn/api/memos", {
+      credentials: "include",
+      headers: { authorization: "Bearer app-token-1" }
+    });
+  });
+
+  it("clears stored app session tokens after logout", async () => {
+    let token: string | null = "app-token-1";
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({ ok: true }));
+    const client = new ApiClient(fetchMock, {
+      apiBaseUrl: "https://memotask.rrwks.cn",
+      appSessionStorage: {
+        get: () => token,
+        set: (nextToken) => {
+          token = nextToken;
+        },
+        clear: () => {
+          token = null;
+        }
+      }
+    });
+
+    await client.logout();
+
+    expect(fetchMock).toHaveBeenCalledWith("https://memotask.rrwks.cn/api/auth/logout", {
+      method: "POST",
+      credentials: "include",
+      headers: { authorization: "Bearer app-token-1" }
+    });
+    expect(token).toBeNull();
   });
 
   it("binds the default browser fetch before making requests", async () => {

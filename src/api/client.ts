@@ -25,8 +25,27 @@ interface AiSettingsInput {
   promptTemplate: string;
 }
 
+interface ApiClientOptions {
+  apiBaseUrl?: string;
+  appSessionStorage?: AppSessionStorage;
+}
+
+interface AppSessionStorage {
+  get(): string | null;
+  set(token: string): void;
+  clear(): void;
+}
+
+interface AuthResponseBody {
+  user: AuthUserView;
+  appSessionToken?: string;
+}
+
 export class ApiClient {
-  constructor(private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis)) {}
+  constructor(
+    private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
+    private readonly options: ApiClientOptions = {}
+  ) {}
 
   async getCurrentUser(): Promise<AuthUserView | null> {
     try {
@@ -38,27 +57,33 @@ export class ApiClient {
   }
 
   async register(input: { email: string; password: string }): Promise<AuthUserView> {
-    const body = await this.request<{ user: AuthUserView }>("/api/auth/register", {
+    const body = await this.request<AuthResponseBody>("/api/auth/register", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input)
     });
+    this.storeAppSessionToken(body);
     assertPresent(body.user);
     return body.user;
   }
 
   async login(input: { email: string; password: string }): Promise<AuthUserView> {
-    const body = await this.request<{ user: AuthUserView }>("/api/auth/login", {
+    const body = await this.request<AuthResponseBody>("/api/auth/login", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input)
     });
+    this.storeAppSessionToken(body);
     assertPresent(body.user);
     return body.user;
   }
 
   async logout(): Promise<void> {
-    await this.request<{ ok: true }>("/api/auth/logout", { method: "POST" });
+    try {
+      await this.request<{ ok: true }>("/api/auth/logout", { method: "POST" });
+    } finally {
+      this.options.appSessionStorage?.clear();
+    }
   }
 
   async verifyEmail(code: string): Promise<AuthUserView> {
@@ -88,11 +113,12 @@ export class ApiClient {
   }
 
   async resetPassword(input: { token: string; password: string }): Promise<AuthUserView> {
-    const body = await this.request<{ user: AuthUserView }>("/api/auth/reset-password", {
+    const body = await this.request<AuthResponseBody>("/api/auth/reset-password", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input)
     });
+    this.storeAppSessionToken(body);
     assertPresent(body.user);
     return body.user;
   }
@@ -284,7 +310,16 @@ export class ApiClient {
   }
 
   private async request<T>(url: string, init?: RequestInit): Promise<T> {
-    const response = await this.fetcher(url, { ...init, credentials: "include" });
+    const requestInit: RequestInit = {
+      ...init,
+      credentials: "include"
+    };
+    const headers = this.requestHeaders(url, init?.headers);
+    if (headers) {
+      requestInit.headers = headers;
+    }
+
+    const response = await this.fetcher(resolveApiUrl(url, this.options.apiBaseUrl), requestInit);
     const body = (await response.json().catch(() => ({}))) as T & ApiErrorBody;
 
     if (!response.ok) {
@@ -293,9 +328,77 @@ export class ApiClient {
 
     return body;
   }
+
+  private requestHeaders(url: string, headers: HeadersInit | undefined): HeadersInit | undefined {
+    const nextHeaders = normalizeHeaders(headers);
+    if (this.options.appSessionStorage) {
+      if (issuesAppSessionToken(url)) {
+        nextHeaders.set("x-memotask-client", "app");
+      }
+      const appSessionToken = this.options.appSessionStorage.get();
+      if (appSessionToken) {
+        nextHeaders.set("authorization", `Bearer ${appSessionToken}`);
+      }
+    }
+
+    return headers || this.options.appSessionStorage ? Object.fromEntries(nextHeaders.entries()) : undefined;
+  }
+
+  private storeAppSessionToken(body: { appSessionToken?: string }): void {
+    if (body.appSessionToken) {
+      this.options.appSessionStorage?.set(body.appSessionToken);
+    }
+  }
 }
 
-export const apiClient = new ApiClient();
+export const apiClient = new ApiClient(undefined, {
+  apiBaseUrl: resolveApiBaseUrl(import.meta.env.MODE, import.meta.env.VITE_API_BASE_URL),
+  appSessionStorage: createAppSessionStorage(resolveApiBaseUrl(import.meta.env.MODE, import.meta.env.VITE_API_BASE_URL))
+});
+
+export function resolveApiBaseUrl(mode: string, configuredBaseUrl?: string): string | undefined {
+  const trimmedConfiguredBaseUrl = configuredBaseUrl?.trim();
+  if (trimmedConfiguredBaseUrl) {
+    return trimmedConfiguredBaseUrl;
+  }
+
+  if (mode === "desktop" || mode === "android") {
+    return "https://memotask.rrwks.cn";
+  }
+
+  return undefined;
+}
+
+export function resolveApiUrl(path: string, baseUrl?: string): string {
+  const trimmedBaseUrl = baseUrl?.trim();
+  if (!trimmedBaseUrl) {
+    return path;
+  }
+
+  return `${trimmedBaseUrl.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+}
+
+export function createAppSessionStorage(apiBaseUrl?: string): AppSessionStorage | undefined {
+  if (!apiBaseUrl || typeof window === "undefined" || !window.localStorage) {
+    return undefined;
+  }
+
+  const key = "memotask.appSessionToken";
+  return {
+    get: () => window.localStorage.getItem(key),
+    set: (token) => window.localStorage.setItem(key, token),
+    clear: () => window.localStorage.removeItem(key)
+  };
+}
+
+function normalizeHeaders(headers: HeadersInit | undefined): Headers {
+  const nextHeaders = new Headers(headers);
+  return nextHeaders;
+}
+
+function issuesAppSessionToken(path: string): boolean {
+  return path === "/api/auth/register" || path === "/api/auth/login" || path === "/api/auth/reset-password";
+}
 
 function assertPresent<T>(value: T | null | undefined): asserts value is T {
   if (value === null || value === undefined) {

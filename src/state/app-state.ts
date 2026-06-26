@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiClient, ApiRequestError, apiClient } from "../api/client";
+import { createAndroidBackButtonHandler } from "../native/android-back-button";
+import { createNativeBridge, type ExternalCapturePayload } from "../native/native-bridge";
 import { DEFAULT_PROMPT } from "../shared/ai-defaults";
 import type { AiSettingsView, AuthUserView, DraftTodoInput, Memo, PublishMemoInput, SyncStatusView } from "../types";
 
@@ -25,6 +27,13 @@ export interface AiSettingsDraft {
   promptTemplate: string;
 }
 
+export interface LocalCaptureDraft {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: string;
+}
+
 export interface AppState {
   authMode: AuthMode;
   authUser: AuthUserView | null;
@@ -40,6 +49,7 @@ export interface AppState {
   historyMemos: Memo[];
   historyQuery: string;
   recentDrafts: Memo[];
+  localDrafts: LocalCaptureDraft[];
   draft: DraftState;
   captureMessage: string | null;
   isAnalyzing: boolean;
@@ -67,6 +77,7 @@ export interface AppState {
   updateDraft: (patch: Partial<DraftState>) => void;
   updateAiSettingsDraft: (patch: Partial<AiSettingsDraft>) => void;
   loadRecentDraft: (draftId: string) => void;
+  loadLocalDraft: (draftId: string) => void;
   addDraftTodo: (title: string) => void;
   removeDraftTodo: (index: number) => void;
   moveDraftTodo: (index: number, direction: "up" | "down") => void;
@@ -107,6 +118,8 @@ const defaultAiSettingsDraft: AiSettingsDraft = {
   promptTemplate: DEFAULT_PROMPT
 };
 
+const localCaptureDraftsKey = "memotask.localCaptureDrafts";
+
 export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   const initialRoute = routeFromPath();
   const [page, setPageState] = useState<Page>(initialRoute.page);
@@ -116,6 +129,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   const [historyMemos, setHistoryMemos] = useState<Memo[]>([]);
   const [historyQuery, setHistoryQuery] = useState("");
   const [recentDrafts, setRecentDrafts] = useState<Memo[]>([]);
+  const [localDrafts, setLocalDrafts] = useState<LocalCaptureDraft[]>(() => readLocalCaptureDrafts());
   const [draft, setDraft] = useState<DraftState>(emptyDraft);
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
   const [captureMessage, setCaptureMessage] = useState<string | null>(null);
@@ -135,9 +149,13 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   const [resetToken, setResetToken] = useState(new URLSearchParams(window.location.search).get("token") ?? "");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const nativeBridge = useMemo(() => createNativeBridge(), []);
+  const pendingExternalCaptureRef = useRef<ExternalCapturePayload | null>(null);
+  const authModeRef = useRef<AuthMode>(authMode);
   const historyRequestIdRef = useRef(0);
   const activePrimary = page === "history" || page === "memoDetail" ? "memos" : page;
   const title = useMemo(() => pageTitle(page), [page]);
+  authModeRef.current = authMode;
 
   useEffect(() => {
     if (window.location.pathname === "/") {
@@ -207,13 +225,48 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
       return;
     }
 
-    setCaptureMessage("草稿保存中");
+    setCaptureMessage((current) => (current === "已接收外部分享" || current === "已打开快速记录" ? current : "草稿保存中"));
     const timeout = window.setTimeout(() => {
       void saveCurrentDraft();
     }, 1000);
 
     return () => window.clearTimeout(timeout);
   }, [authMode, page, draft.title, draft.content]);
+
+  useEffect(() => {
+    return nativeBridge.onExternalCapture((payload) => {
+      if (authModeRef.current !== "authenticated") {
+        pendingExternalCaptureRef.current = payload;
+        return;
+      }
+
+      loadExternalCapture(payload);
+    });
+  }, [nativeBridge]);
+
+  useEffect(() => {
+    if (authMode !== "authenticated" || !pendingExternalCaptureRef.current) {
+      return;
+    }
+
+    const payload = pendingExternalCaptureRef.current;
+    pendingExternalCaptureRef.current = null;
+    loadExternalCapture(payload);
+  }, [authMode]);
+
+  useEffect(() => {
+    if (authMode !== "authenticated" || nativeBridge.platform !== "android") {
+      return;
+    }
+
+    const handleBackButton = createAndroidBackButtonHandler({
+      getPage: () => page,
+      navigateTo: setPage,
+      goBack: () => window.history.back()
+    });
+    document.addEventListener("backbutton", handleBackButton);
+    return () => document.removeEventListener("backbutton", handleBackButton);
+  }, [authMode, nativeBridge, page]);
 
   async function checkAuth() {
     await run(async () => {
@@ -450,6 +503,33 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     setCaptureMessage("已载入最近草稿");
   }
 
+  function loadLocalDraft(draftId: string) {
+    const selected = localDrafts.find((candidate) => candidate.id === draftId);
+    if (!selected) {
+      return;
+    }
+
+    setCurrentDraftId(null);
+    setDraft({
+      title: selected.title === "未命名 Memo" ? "" : selected.title,
+      content: selected.content,
+      todos: []
+    });
+    setCaptureMessage("已载入本地草稿");
+    applyRoute({ page: "capture", memoId: null }, true);
+  }
+
+  function loadExternalCapture(payload: ExternalCapturePayload) {
+    setCurrentDraftId(null);
+    setDraft({
+      title: payload.title,
+      content: payload.content,
+      todos: []
+    });
+    setCaptureMessage(payload.source === "android-share" ? "已接收外部分享" : "已打开快速记录");
+    applyRoute({ page: "capture", memoId: null }, true);
+  }
+
   function addDraftTodo(title: string) {
     const trimmed = title.trim();
     if (!trimmed) {
@@ -551,13 +631,22 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
 
     setCaptureMessage("发布中");
     await run(async () => {
-      await client.publishMemo(input);
+      try {
+        await client.publishMemo(input);
+      } catch (caught) {
+        const nextLocalDrafts = saveLocalCaptureDraft(input);
+        setLocalDrafts(nextLocalDrafts);
+        setCaptureMessage("发布失败，已保存在本地草稿");
+        nativeBridge.notifyCaptureFailed("内容已保存在本地草稿，可稍后重试");
+        throw caught;
+      }
       setDraft(emptyDraft);
       setCurrentDraftId(null);
       setCaptureMessage(null);
       setRecentDrafts(await client.listRecentDrafts());
       applyRoute({ page: "memos", memoId: null }, true);
       setMemos(await client.listMemos());
+      nativeBridge.notifyCaptureSaved("Memo 已发布到队列");
     });
   }
 
@@ -893,6 +982,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     historyMemos,
     historyQuery,
     recentDrafts,
+    localDrafts,
     draft,
     captureMessage,
     isAnalyzing,
@@ -920,6 +1010,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     updateDraft,
     updateAiSettingsDraft,
     loadRecentDraft,
+    loadLocalDraft,
     addDraftTodo,
     removeDraftTodo,
     moveDraftTodo,
@@ -997,6 +1088,34 @@ function pathForRoute(route: RouteState): string {
   if (route.page === "history") return "/history";
   if (route.page === "memoDetail" && route.memoId) return `/memos/${encodeURIComponent(route.memoId)}`;
   return "/memos";
+}
+
+function readLocalCaptureDrafts(): LocalCaptureDraft[] {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return [];
+  }
+
+  try {
+    const value = window.localStorage.getItem(localCaptureDraftsKey);
+    const parsed = value ? (JSON.parse(value) as LocalCaptureDraft[]) : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((draft) => typeof draft.id === "string" && typeof draft.content === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalCaptureDraft(input: PublishMemoInput): LocalCaptureDraft[] {
+  const nextDraft: LocalCaptureDraft = {
+    id: `local-${Date.now()}`,
+    title: input.title || "未命名 Memo",
+    content: input.content,
+    createdAt: new Date().toISOString()
+  };
+  const nextDrafts = [nextDraft, ...readLocalCaptureDrafts()].slice(0, 10);
+  window.localStorage.setItem(localCaptureDraftsKey, JSON.stringify(nextDrafts));
+  return nextDrafts;
 }
 
 function toggleTodoInMemos(memos: Memo[], todoId: string): Memo[] {

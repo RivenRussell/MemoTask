@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp, Sparkles, Trash2 } from "lucide-react";
 import { useState } from "react";
-import type { DraftState } from "../state/app-state";
+import type { DraftState, LocalCaptureDraft } from "../state/app-state";
 import type { Memo } from "../types";
 
 export function CapturePage({
@@ -8,9 +8,11 @@ export function CapturePage({
   error,
   message,
   recentDrafts,
+  localDrafts,
   isAnalyzing,
   onUpdateDraft,
   onLoadDraft,
+  onLoadLocalDraft,
   onAddTodo,
   onRemoveTodo,
   onMoveTodo,
@@ -21,9 +23,11 @@ export function CapturePage({
   error: string | null;
   message: string | null;
   recentDrafts: Memo[];
+  localDrafts: LocalCaptureDraft[];
   isAnalyzing: boolean;
   onUpdateDraft: (patch: Partial<DraftState>) => void;
   onLoadDraft: (draftId: string) => void;
+  onLoadLocalDraft: (draftId: string) => void;
   onAddTodo: (title: string) => void;
   onRemoveTodo: (index: number) => void;
   onMoveTodo: (index: number, direction: "up" | "down") => void;
@@ -100,6 +104,27 @@ export function CapturePage({
           ) : (
             <p className="empty-panel-text">保存过的草稿会出现在这里。</p>
           )}
+          {localDrafts.length > 0 ? (
+            <div className="local-drafts-panel">
+              <div className="draft-panel-heading">
+                <h2>本地草稿</h2>
+              </div>
+              <div className="recent-drafts">
+                {localDrafts.map((localDraft) => (
+                  <button
+                    className="secondary-action recent-draft-button"
+                    key={localDraft.id}
+                    type="button"
+                    aria-label={`载入本地草稿：${localDraft.title}`}
+                    onClick={() => onLoadLocalDraft(localDraft.id)}
+                  >
+                    <span>{localDraft.title}</span>
+                    <time dateTime={localDraft.createdAt}>{formatDraftTime(localDraft.createdAt)}</time>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </section>
         <section className="draft-todo-panel" aria-label="草稿 Todo">
           <div className="draft-panel-heading">

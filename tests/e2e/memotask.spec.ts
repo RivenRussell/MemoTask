@@ -1,11 +1,24 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createApi } from "../../worker/api";
+import { createSessionCookie, hashPassword, hashToken } from "../../worker/auth/crypto";
+import { MemoryAuthRepository } from "../../worker/auth/memory-auth-repository";
+import { AuthService } from "../../worker/auth/service";
+import type { EmailMessage, EmailSender } from "../../worker/auth/types";
 import { MemoryRepository } from "../../worker/repository/memory-repository";
 
 test.beforeEach(async ({ page }) => {
   const repository = new MemoryRepository();
+  const authRepository = new MemoryAuthRepository();
+  const sessionToken = "e2e-session-token";
+  await seedDefaultSession(authRepository, sessionToken);
+  const sessionCookie = createSessionCookie(sessionToken, "2099-01-01T00:00:00.000Z").split(";")[0];
   const app = createApi({
     repository,
+    authService: new AuthService({
+      repository: authRepository,
+      emailSender: new RecordingEmailSender(),
+      appBaseUrl: "https://memotask.example.com"
+    }),
     now: () => "2026-06-22T12:00:00.000Z",
     appEncryptionKey: "test-encryption-key-for-e2e",
     fetchAi: async () =>
@@ -30,9 +43,11 @@ test.beforeEach(async ({ page }) => {
       return;
     }
 
+    const headers = new Headers(await request.allHeaders());
+    headers.set("cookie", sessionCookie);
     const response = await app.request(request.url(), {
       method: request.method(),
-      headers: await request.allHeaders(),
+      headers,
       body: request.postData() ?? undefined
     });
     await route.fulfill({
@@ -109,4 +124,31 @@ async function expectMemoOrder(page: Page, titles: string[]) {
       return page.locator("article.memo-card h2").evaluateAll((nodes) => nodes.map((node) => node.textContent ?? ""));
     })
     .toEqual(titles);
+}
+
+async function seedDefaultSession(authRepository: MemoryAuthRepository, sessionToken: string): Promise<void> {
+  await authRepository.createUser({
+    id: "default",
+    email: "local@memotask.test",
+    passwordHash: await hashPassword("memo123"),
+    emailVerifiedAt: "2026-06-22T12:00:00.000Z",
+    createdAt: "2026-06-22T12:00:00.000Z",
+    updatedAt: "2026-06-22T12:00:00.000Z"
+  });
+  await authRepository.createSession({
+    id: "session-default",
+    userId: "default",
+    tokenHash: await hashToken(sessionToken),
+    expiresAt: "2099-01-01T00:00:00.000Z",
+    createdAt: "2026-06-22T12:00:00.000Z",
+    lastSeenAt: "2026-06-22T12:00:00.000Z"
+  });
+}
+
+class RecordingEmailSender implements EmailSender {
+  public messages: EmailMessage[] = [];
+
+  async send(message: EmailMessage): Promise<void> {
+    this.messages.push(message);
+  }
 }

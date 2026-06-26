@@ -9,5 +9,6 @@ playwright-report/
 test-results/
 coverage/
 output/
+release/
 .worktrees/
 *.local

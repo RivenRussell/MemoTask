@@ -1,6 +1,6 @@
 {
   "name": "memotask",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -15,7 +15,15 @@
     "worker:deploy": "wrangler deploy",
     "db:migrate:local": "wrangler d1 migrations apply memotask-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply memotask-db --remote",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "build:web": "tsc --noEmit && vite build",
+    "build:desktop": "tsc --noEmit && vite build --mode desktop",
+    "desktop:dev": "npm run build:desktop && electron .",
+    "desktop:pack": "npm run build:desktop && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --win dir --publish never",
+    "desktop:build": "npm run build:desktop && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --win nsis --publish never",
+    "build:android": "tsc --noEmit && vite build --mode android",
+    "android:sync": "npm run build:android && cap sync android",
+    "android:apk": "npm run android:sync && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-android-apk.ps1"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -27,6 +35,9 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.4.1",
+    "@capacitor/cli": "^8.4.1",
+    "@capacitor/core": "^8.4.1",
     "@cloudflare/workers-types": "^4.20260620.0",
     "@playwright/test": "^1.49.1",
     "@testing-library/jest-dom": "^6.6.3",
@@ -36,10 +47,40 @@
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "^4.3.4",
+    "cross-env": "^10.1.0",
+    "electron": "^42.5.0",
+    "electron-builder": "^26.15.3",
     "jsdom": "^25.0.1",
     "typescript": "^5.7.2",
     "vite": "^6.0.6",
     "vitest": "^2.1.8",
     "wrangler": "^4.23.0"
+  },
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "cn.rrwks.memotask",
+    "productName": "MemoTask",
+    "icon": "electron/assets/icon.ico",
+    "directories": {
+      "output": "release/desktop"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MemoTask"
+    },
+    "electronDist": "node_modules/electron/dist"
   }
 }

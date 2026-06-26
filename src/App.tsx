@@ -90,10 +90,12 @@ export default function App({ client }: { client?: ApiClient }) {
           error={state.error}
           isAnalyzing={state.isAnalyzing}
           message={state.captureMessage}
+          localDrafts={state.localDrafts}
           recentDrafts={state.recentDrafts}
           onAddTodo={state.addDraftTodo}
           onAnalyze={state.analyzeDraft}
           onLoadDraft={state.loadRecentDraft}
+          onLoadLocalDraft={state.loadLocalDraft}
           onMoveTodo={state.moveDraftTodo}
           onPublish={state.publishDraft}
           onRemoveTodo={state.removeDraftTodo}

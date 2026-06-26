@@ -2,7 +2,7 @@
 
 MemoTask 是一个低压力的个人 Memo 待办整理工具。它的核心思路很简单：先把脑子里的想法、计划、链接、琐事写成一条 Memo，再让人工智能把这条 Memo 内部拆成可执行的待办项。用户不需要一开始就想清楚分类、日期和提醒，只需要先记录，再整理。
 
-当前版本为 **v2.0.0**。这个版本新增了完整账号体系，包括注册、登录、邮箱验证码、退出登录、忘记密码、重置密码、会话管理，以及按账号隔离 Memo、草稿、历史记录、人工智能设置和导出数据。
+当前版本为 **v3.0.0**。这个版本完整继承 v2 网页端能力，并新增 Windows 桌面安装包、Android APK，以及跨端快速记录体验。
 
 生产访问地址：
 
@@ -12,7 +12,7 @@ https://memotask.rrwks.cn/login
 
 ## 版本重点
 
-v2.0.0 相比 v1 的最大变化是从“单用户自用工具”升级为“带账号隔离的多用户应用”。
+v3.0.0 相比 v2 的最大变化是从“网页访问”扩展为“网页、Windows 桌面端、Android APK”三种入口。桌面端和 Android 端会把 React 构建产物打包到本地应用内，接口仍请求同一个 Cloudflare Worker 和 D1 后端。
 
 主要能力：
 
@@ -26,6 +26,11 @@ v2.0.0 相比 v1 的最大变化是从“单用户自用工具”升级为“带
 - 前端、后端和静态资源统一部署在同一个 Cloudflare Worker。
 - Cloudflare D1 保存账号、会话、Memo、待办、历史记录、草稿、撤销记录和同步状态。
 - Resend 负责发送注册验证和密码重置邮件。
+- Windows 端通过 Electron 打包为 `.exe` 安装包。
+- Android 端通过 Capacitor 打包为可侧载 APK。
+- 桌面端支持托盘、`Ctrl + Alt + M` 快捷键、快速记录窗口和系统通知。
+- Android 端支持从其他 App 分享文本或链接到 MemoTask。
+- 发布失败时会保留本地草稿，避免记录内容丢失。
 
 ## 产品理念
 
@@ -96,6 +101,9 @@ Memo 功能：
 - 手机端和电脑端共用同一套账号数据。
 - 响应式布局适配安卓手机和桌面浏览器。
 - 生产环境通过 Cloudflare 自定义域名访问。
+- Windows 桌面端安装后可从托盘或 `Ctrl + Alt + M` 快速打开记录窗口。
+- Android 端可从系统分享菜单接收 `text/plain` 文本和链接。
+- 网络异常导致发布失败时，记录内容会进入本地草稿列表，稍后可重新载入。
 
 ## 技术架构
 
@@ -127,6 +135,9 @@ Cloudflare D1
 - Cloudflare Workers
 - Cloudflare Workers Assets
 - Cloudflare D1
+- Electron
+- electron-builder
+- Capacitor Android
 - Wrangler
 - Vitest
 - Testing Library
@@ -144,6 +155,9 @@ worker/repository/    D1 与内存仓储实现
 migrations/           Cloudflare D1 数据库迁移
 tests/api/            Worker 接口和仓储测试
 tests/ui/             React 页面与交互测试
+tests/electron/       Electron 打包配置测试
+tests/android/        Android/Capacitor 配置测试
+tests/native/         跨端原生桥接测试
 tests/e2e/            Playwright 端到端和视觉检查
 docs/                 核心中文文档
 ```
@@ -270,6 +284,38 @@ npm run test:ui
 npm run build
 ```
 
+执行 Web 构建：
+
+```bash
+npm run build:web
+```
+
+构建 Windows 桌面安装包：
+
+```bash
+npm run desktop:build
+```
+
+产物位置：
+
+```text
+release/desktop/MemoTask Setup 3.0.0.exe
+```
+
+构建 Android APK：
+
+```bash
+npm run android:apk
+```
+
+产物位置：
+
+```text
+android/app/build/outputs/apk/release/app-release.apk
+```
+
+Android 构建需要 JDK 11 或更新版本。`scripts/build-android-apk.ps1` 会优先使用本机 JDK 21 或 Android Studio JBR，避免系统默认 Java 8 导致 Gradle 构建失败。当前 APK 用于手动侧载，release 构建使用本机调试签名配置生成；后续公开分发时可替换为私有 keystore。
+
 运行 Playwright 检查：
 
 ```bash
@@ -310,6 +356,24 @@ curl -I https://memotask.rrwks.cn/login
 ```
 
 Cloudflare 的详细配置见 [Cloudflare 部署指南](docs/cloudflare-setup.md)。
+
+## v3 应用打包说明
+
+Windows 桌面端：
+
+- 使用 Electron 加载本地打包的 `dist` 静态文件。
+- 应用启动时通过本机 `127.0.0.1` 临时服务提供静态资源，避免 `file://` 场景下的跨域和路由问题。
+- 接口请求指向 `https://memotask.rrwks.cn/api/*`。
+- 登录态使用 Worker 返回的 app session token，避免削弱网页端 HttpOnly Cookie 安全模型。
+- 支持系统托盘、快速记录窗口、`Ctrl + Alt + M` 快捷键和系统通知。
+
+Android 端：
+
+- 使用 Capacitor 打包 `dist` 到 Android WebView。
+- APK 不用于上架，只用于手动安装。
+- 接口请求指向 `https://memotask.rrwks.cn/api/*`。
+- 支持系统分享菜单接收文本和链接。
+- 支持 Android 返回键：记录、设置、历史和详情页优先返回队列页。
 
 ## 主要接口
 
@@ -389,7 +453,7 @@ POST /api/ai/analyze-draft
 当前发布版本：
 
 ```text
-v2.0.0
+v3.0.0
 ```
 
 重要分支和标签：
@@ -397,8 +461,10 @@ v2.0.0
 ```text
 codex/memotask-v1       v1 基线分支
 codex/v2-auth           v2 开发和发布分支
+codex/v3-app-packaging  v3 桌面端与 Android 打包分支
 v1                      已存在的 v1 标签
-v2.0.0                  当前 v2 正式标签
+v2.0.0                  v2 正式标签
+v3.0.0                  v3 正式标签，发布时创建
 ```
 
 查看版本历史：
@@ -417,6 +483,12 @@ git switch codex/memotask-v1
 
 ```bash
 git switch codex/v2-auth
+```
+
+切换到 v3 当前开发分支：
+
+```bash
+git switch codex/v3-app-packaging
 ```
 
 检出 v2.0.0 标签：

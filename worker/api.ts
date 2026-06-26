@@ -22,6 +22,15 @@ function getNow(options?: ApiOptions): string {
   return options?.now?.() ?? new Date().toISOString();
 }
 
+function isAppClient(context: { req: { header: (name: string) => string | undefined } }): boolean {
+  return context.req.header("x-memotask-client") === "app";
+}
+
+function readBearerToken(authorizationHeader: string | null | undefined): string | null {
+  const match = authorizationHeader?.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || null;
+}
+
 async function readJson<T>(context: { req: { json: () => Promise<T> } }): Promise<T> {
   return context.req.json();
 }
@@ -34,7 +43,10 @@ async function currentUser(
     return { user: null, response: null };
   }
 
-  const user = await options.authService.resolveSession(context.req.header("cookie"), getNow(options));
+  const bearerToken = readBearerToken(context.req.header("authorization"));
+  const user = bearerToken
+    ? await options.authService.resolveSessionToken(bearerToken, getNow(options))
+    : await options.authService.resolveSession(context.req.header("cookie"), getNow(options));
   if (!user) {
     return {
       user: null,
@@ -79,6 +91,15 @@ function withSessionCookie(context: { json: (object: unknown, status?: number) =
   const response = context.json(body, status);
   response.headers.append("set-cookie", sessionCookie);
   return response;
+}
+
+function withAuthResult(
+  context: { json: (object: unknown, status?: number) => Response; req: { header: (name: string) => string | undefined } },
+  result: { user: PublicAuthUser; sessionCookie: string; sessionToken: string },
+  status = 200
+): Response {
+  const body = isAppClient(context) ? { user: result.user, appSessionToken: result.sessionToken } : { user: result.user };
+  return withSessionCookie(context, body, result.sessionCookie, status);
 }
 
 function publicAiSettings(settings: AiSettings) {
@@ -220,7 +241,7 @@ export function createApi(options: ApiOptions = {}) {
     try {
       const body = await readJson<{ email?: string; password?: string }>(context);
       const result = await options.authService.register({ email: body.email ?? "", password: body.password ?? "" }, getNow(options));
-      return withSessionCookie(context, { user: result.user }, result.sessionCookie, 201);
+      return withAuthResult(context, result, 201);
     } catch (error) {
       return authErrorResponse(error);
     }
@@ -234,7 +255,7 @@ export function createApi(options: ApiOptions = {}) {
     try {
       const body = await readJson<{ email?: string; password?: string }>(context);
       const result = await options.authService.login({ email: body.email ?? "", password: body.password ?? "" }, getNow(options));
-      return withSessionCookie(context, { user: result.user }, result.sessionCookie);
+      return withAuthResult(context, result);
     } catch (error) {
       return authErrorResponse(error);
     }
@@ -245,6 +266,10 @@ export function createApi(options: ApiOptions = {}) {
       return context.json({ ok: true });
     }
 
+    const bearerToken = readBearerToken(context.req.header("authorization"));
+    if (bearerToken) {
+      await options.authService.logoutToken(bearerToken);
+    }
     const result = await options.authService.logout(context.req.header("cookie"));
     return withSessionCookie(context, { ok: true }, result.sessionCookie);
   });
@@ -254,7 +279,10 @@ export function createApi(options: ApiOptions = {}) {
       return context.json({ error: { code: "AUTH_UNAVAILABLE", message: "账号服务未启用" } }, 503);
     }
 
-    const user = await options.authService.resolveSession(context.req.header("cookie"), getNow(options));
+    const bearerToken = readBearerToken(context.req.header("authorization"));
+    const user = bearerToken
+      ? await options.authService.resolveSessionToken(bearerToken, getNow(options))
+      : await options.authService.resolveSession(context.req.header("cookie"), getNow(options));
     if (!user) {
       return context.json({ error: { code: "AUTH_REQUIRED", message: "请先登录" } }, 401);
     }
@@ -311,7 +339,7 @@ export function createApi(options: ApiOptions = {}) {
     try {
       const body = await readJson<{ token?: string; password?: string }>(context);
       const result = await options.authService.resetPassword({ token: body.token ?? "", password: body.password ?? "" }, getNow(options));
-      return withSessionCookie(context, { user: result.user }, result.sessionCookie);
+      return withAuthResult(context, result);
     } catch (error) {
       return authErrorResponse(error);
     }

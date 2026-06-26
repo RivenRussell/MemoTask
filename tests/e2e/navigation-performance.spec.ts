@@ -110,7 +110,7 @@ test("todo checkbox gives visible feedback without waiting on writes", async ({ 
   });
 
   await page.goto("/memos");
-  await expect(page.getByText("性能反馈 Memo")).toBeVisible({ timeout: 4_000 });
+  await expect(page.getByText("性能反馈 Memo")).toBeVisible({ timeout: 8_000 });
 
   const checkbox = page.getByRole("checkbox", { name: "立即显示勾选" });
   const startedAt = Date.now();

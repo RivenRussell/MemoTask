@@ -14,13 +14,17 @@ export interface Env {
 }
 
 export default {
-  fetch(request: Request, env: Env, executionContext: ExecutionContext) {
+  async fetch(request: Request, env: Env, executionContext: ExecutionContext) {
     const httpsRedirect = redirectPlaintextProductionRequest(request);
     if (httpsRedirect) {
       return httpsRedirect;
     }
 
     const url = new URL(request.url);
+    if (url.pathname.startsWith("/api/") && request.method === "OPTIONS") {
+      return appPreflightResponse(request);
+    }
+
     if (!url.pathname.startsWith("/api/")) {
       return env.ASSETS.fetch(request);
     }
@@ -34,9 +38,72 @@ export default {
       }),
       appEncryptionKey: env.APP_ENCRYPTION_KEY
     });
-    return app.fetch(request, env, executionContext);
+    const response = await app.fetch(request, env, executionContext);
+    return withAppCorsHeaders(request, response);
   }
 };
+
+const APP_CORS_ORIGINS = new Set(["https://localhost", "capacitor://localhost"]);
+
+function appPreflightResponse(request: Request): Response {
+  const origin = allowedAppOrigin(request);
+  if (!origin) {
+    return new Response(null, { status: 403 });
+  }
+
+  return new Response(null, {
+    status: 204,
+    headers: appCorsHeaders(origin, request.headers.get("access-control-request-headers"))
+  });
+}
+
+function withAppCorsHeaders(request: Request, response: Response): Response {
+  const origin = allowedAppOrigin(request);
+  if (!origin) {
+    return response;
+  }
+
+  const headers = new Headers(response.headers);
+  for (const [name, value] of appCorsHeaders(origin)) {
+    headers.set(name, value);
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
+function appCorsHeaders(origin: string, requestedHeaders?: string | null): Headers {
+  return new Headers({
+    "access-control-allow-origin": origin,
+    "access-control-allow-credentials": "true",
+    "access-control-allow-methods": "GET,POST,PATCH,PUT,DELETE,OPTIONS",
+    "access-control-allow-headers": requestedHeaders || "authorization,content-type,x-memotask-client",
+    "vary": "Origin"
+  });
+}
+
+function allowedAppOrigin(request: Request): string | null {
+  const origin = request.headers.get("origin");
+  if (!origin) {
+    return null;
+  }
+  if (APP_CORS_ORIGINS.has(origin)) {
+    return origin;
+  }
+
+  try {
+    const url = new URL(origin);
+    if (url.protocol === "http:" && url.hostname === "127.0.0.1") {
+      return origin;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
 
 function redirectPlaintextProductionRequest(request: Request): Response | null {
   const url = new URL(request.url);

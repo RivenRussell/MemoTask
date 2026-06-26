@@ -253,4 +253,47 @@ describe("auth API protection", () => {
     expect(list.status).toBe(200);
     expect(body.memos.map((memo: { title: string }) => memo.title)).toEqual(["v2 Memo"]);
   });
+
+  it("returns an app session token for app clients and accepts it as bearer auth", async () => {
+    const { app, emailSender } = createProtectedApi();
+    await app.request("/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "owner@example.com", password: "memo123" })
+    });
+    await app.request("/api/auth/verify-email", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code: verificationCodeFromLatestEmail(emailSender) })
+    });
+
+    const login = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-memotask-client": "app" },
+      body: JSON.stringify({ email: "owner@example.com", password: "memo123" })
+    });
+    const loginBody = await json(login);
+
+    expect(login.status).toBe(200);
+    expect(loginBody.appSessionToken).toEqual(expect.any(String));
+    expect(loginBody.appSessionToken.length).toBeGreaterThan(20);
+
+    const publish = await app.request("/api/memos/publish", {
+      method: "POST",
+      headers: {
+        "authorization": `Bearer ${loginBody.appSessionToken}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ title: "App Memo", content: "来自安装包", todos: [] })
+    });
+    expect(publish.status).toBe(201);
+
+    const list = await app.request("/api/memos", {
+      headers: { "authorization": `Bearer ${loginBody.appSessionToken}` }
+    });
+    const body = await json(list);
+
+    expect(list.status).toBe(200);
+    expect(body.memos.map((memo: { title: string }) => memo.title)).toEqual(["App Memo"]);
+  });
 });
