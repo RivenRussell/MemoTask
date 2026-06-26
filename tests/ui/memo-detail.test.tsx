@@ -117,6 +117,51 @@ describe("MemoTask memo detail workflow", () => {
     await userEvent.click(screen.getByRole("button", { name: "手动归档" }));
     expect(screen.getByText("归档中")).toBeInTheDocument();
   });
+
+  it("places memo title and content before the detail todo list", async () => {
+    window.history.pushState({}, "", "/memos");
+    render(
+      <App
+        client={createUiTestClient({
+          initialMemos: [createMemo("memo-detail-order", "先看标题内容", [createTodo("todo-detail-order", "再看 Todo", "memo-detail-order")])]
+        })}
+      />
+    );
+
+    expect(await screen.findByText("先看标题内容")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "打开 先看标题内容" }));
+
+    const memoSection = screen.getByLabelText("详情标题").closest("section");
+    const todoSection = screen.getByRole("heading", { name: "Todo 管理" }).closest("section");
+
+    expect(memoSection).not.toBeNull();
+    expect(todoSection).not.toBeNull();
+    expect(memoSection?.compareDocumentPosition(todoSection as Element)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it("uses multiline controls for detail todo titles so long todos remain readable", async () => {
+    window.history.pushState({}, "", "/memos");
+    render(
+      <App
+        client={createUiTestClient({
+          initialMemos: [
+            createMemo("memo-detail-long-todo", "长 Todo Memo", [
+              createTodo(
+                "todo-detail-long",
+                "这是一条很长的 Todo，需要在详情页完整显示而不是被单行输入框裁切",
+                "memo-detail-long-todo"
+              )
+            ])
+          ]
+        })}
+      />
+    );
+
+    expect(await screen.findByText("长 Todo Memo")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "打开 长 Todo Memo" }));
+
+    expect(screen.getByLabelText("编辑 这是一条很长的 Todo，需要在详情页完整显示而不是被单行输入框裁切").tagName).toBe("TEXTAREA");
+  });
 });
 
 function createMemo(id: string, title: string, todos: Memo["todos"]): Memo {

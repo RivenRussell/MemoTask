@@ -928,7 +928,9 @@ textarea {
 }
 
 .memo-detail-layout {
-  grid-template-columns: minmax(340px, 0.86fr) minmax(0, 1.14fr);
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  max-width: 1120px;
 }
 
 .memo-detail-editor,
@@ -937,7 +939,20 @@ textarea {
 }
 
 .memo-detail-editor {
-  min-height: min(620px, calc(100vh - 154px));
+  min-height: auto;
+  grid-template-rows: auto auto auto auto;
+  gap: 14px;
+}
+
+.memo-detail-content-input {
+  min-height: 112px;
+  padding-bottom: 8px;
+}
+
+.memo-detail-todos {
+  display: grid;
+  gap: 14px;
+  padding: 24px;
 }
 
 .todo-panel-heading {
@@ -969,15 +984,21 @@ textarea {
   display: grid !important;
   grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
+  gap: 12px;
 }
 
 .memo-detail-todo-list {
-  margin-top: 14px;
+  gap: 10px;
 }
 
 .todo-title-input {
   min-height: 42px;
   border-radius: 14px;
+  overflow: hidden;
+  resize: none;
+  line-height: 1.45;
+  padding-top: 10px;
+  padding-bottom: 10px;
 }
 
 .auth-shell {
@@ -1403,11 +1424,16 @@ textarea {
   }
 
   .memo-detail-todos {
-    order: 1;
+    order: 2;
   }
 
   .memo-detail-editor {
-    order: 2;
+    order: 1;
+    min-height: auto;
+  }
+
+  .memo-detail-content-input {
+    min-height: 120px;
   }
 
   .memo-detail-actions {
@@ -1563,5 +1589,13 @@ textarea {
 
   .paper-body-input {
     min-height: 300px;
+  }
+
+  .memo-detail-editor {
+    min-height: auto;
+  }
+
+  .memo-detail-content-input {
+    min-height: 120px;
   }
 }
