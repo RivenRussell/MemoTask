@@ -138,20 +138,21 @@ for (const spec of authPageSpecs) {
   });
 }
 
-test("visual QA keeps memo detail readable on Android", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "android", "Android-only mobile detail layout check");
-
+test("visual QA keeps memo detail readable across app viewports", async ({ page }, testInfo) => {
   await page.goto("/memos");
   await page.getByRole("button", { name: "打开 双端验收 Memo" }).click();
   await expect(page.getByRole("heading", { name: "Memo 详情", exact: true })).toBeVisible();
   await expect(page.getByLabel("详情标题")).toHaveValue("双端验收 Memo");
+  await expect(page.getByLabel("详情原文")).toHaveValue("用于确认 PC 和 Android 页面不白屏，按钮不裁切。");
   const todoTitles = await page.locator(".memo-detail-todo-list .todo-title-input").evaluateAll((inputs) =>
-    inputs.map((input) => (input as HTMLInputElement).value)
+    inputs.map((input) => (input as HTMLTextAreaElement).value)
   );
   expect(todoTitles).toContain("第四条 Todo 不在卡片默认展示");
+  await expect(page.locator(".memo-detail-todo-list textarea.todo-title-input")).toHaveCount(4);
 
   await assertVisualIntegrity(page);
-  await expectMobileDetailLayout(page);
+  await expectReadableDetailLayout(page);
+  await expectLastDetailTodoReachable(page);
 
   await mkdir(outputDir, { recursive: true });
   await page.screenshot({
@@ -474,7 +475,7 @@ async function assertAuthVisualIntegrity(page: Page) {
   expect(result.hasFullWidthPrimaryAction).toBe(true);
 }
 
-async function expectMobileDetailLayout(page: Page) {
+async function expectReadableDetailLayout(page: Page) {
   const result = await page.evaluate(() => {
     const detailLayout = document.querySelector(".memo-detail-layout");
     const todoPanel = document.querySelector(".memo-detail-todos");
@@ -493,9 +494,9 @@ async function expectMobileDetailLayout(page: Page) {
     return {
       hasDetailClass: visible(detailLayout),
       workspaceScrollTop: document.querySelector(".workspace-shell")?.scrollTop ?? 0,
-      todoPanelComesBeforeEditor:
+      editorPanelComesBeforeTodo:
         Boolean(todoPanel && editorPanel) &&
-        (todoPanel as Element).getBoundingClientRect().top <= (editorPanel as Element).getBoundingClientRect().top,
+        (editorPanel as Element).getBoundingClientRect().top <= (todoPanel as Element).getBoundingClientRect().top,
       actionBarVisible: visible(actionBar),
       crampedRows: rows
         .filter(visible)
@@ -510,10 +511,34 @@ async function expectMobileDetailLayout(page: Page) {
 
   expect(result.hasDetailClass).toBe(true);
   expect(result.workspaceScrollTop).toBe(0);
-  expect(result.todoPanelComesBeforeEditor).toBe(true);
+  expect(result.editorPanelComesBeforeTodo).toBe(true);
   expect(result.actionBarVisible).toBe(true);
   expect(result.crampedRows).toBe(0);
   expect(result.rowOverflows).toEqual([]);
+}
+
+async function expectLastDetailTodoReachable(page: Page) {
+  const result = await page.evaluate(() => {
+    const workspace = document.querySelector(".workspace-shell");
+    if (workspace) {
+      workspace.scrollTop = workspace.scrollHeight;
+    }
+
+    const lastTodo = document.querySelector(".memo-detail-todo-list .todo-edit-row:last-child");
+    const mobileNav = document.querySelector(".mobile-bottom-nav");
+    const navRect = mobileNav && window.getComputedStyle(mobileNav).display !== "none" ? mobileNav.getBoundingClientRect() : null;
+    const workspaceRect = workspace?.getBoundingClientRect() ?? new DOMRect(0, 0, window.innerWidth, window.innerHeight);
+    const lastTodoRect = lastTodo?.getBoundingClientRect();
+    const visibleBottom = navRect ? Math.min(workspaceRect.bottom, navRect.top) : workspaceRect.bottom;
+
+    return {
+      lastTodoValue: lastTodo?.querySelector<HTMLTextAreaElement>(".todo-title-input")?.value ?? "",
+      lastTodoFullyAboveVisibleBottom: Boolean(lastTodoRect && lastTodoRect.top >= workspaceRect.top && lastTodoRect.bottom <= visibleBottom)
+    };
+  });
+
+  expect(result.lastTodoValue).toBe("第四条 Todo 不在卡片默认展示");
+  expect(result.lastTodoFullyAboveVisibleBottom).toBe(true);
 }
 
 async function expectPageText(page: Page, text: string) {
