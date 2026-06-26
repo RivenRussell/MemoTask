@@ -37,12 +37,11 @@ describe("native quick capture workflow", () => {
     const primaryNav = await findPrimaryNav();
     await userEvent.click(within(primaryNav).getByRole("button", { name: "记录" }));
     await userEvent.type(screen.getByLabelText("原始 Memo"), "需要离线保护的内容");
-    await userEvent.type(screen.getByLabelText("Memo 标题"), "离线草稿");
 
     await userEvent.click(screen.getByRole("button", { name: "发布" }));
 
     await waitFor(() => expect(window.localStorage.getItem("memotask.localCaptureDrafts")).toContain("需要离线保护的内容"));
     expect(await screen.findByText("发布失败，已保存在本地草稿")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "载入本地草稿：离线草稿" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "载入本地草稿：需要离线保护的内容" })).toBeInTheDocument();
   });
 });

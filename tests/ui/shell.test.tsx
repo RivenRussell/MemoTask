@@ -1,6 +1,6 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import App from "../../src/App";
 import { createUiTestClient, findPrimaryNav } from "./test-client";
 
@@ -105,6 +105,51 @@ describe("MemoTask app shell", () => {
     });
 
     expect(await screen.findByText("安卓端新增 Memo")).toBeInTheDocument();
+  });
+
+  it("refreshes the queue from a manual action while staying on the page", async () => {
+    window.history.pushState({}, "", "/");
+    const client = createUiTestClient();
+    render(<App client={client} />);
+
+    expect(await screen.findByText("还没有 Memo")).toBeInTheDocument();
+
+    await client.publishMemo({
+      title: "手机端手动同步 Memo",
+      content: "用户点击刷新后应出现在 PC 队列。",
+      todos: []
+    });
+
+    expect(screen.queryByText("手机端手动同步 Memo")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "刷新队列" }));
+
+    expect(await screen.findByText("手机端手动同步 Memo")).toBeInTheDocument();
+  });
+
+  it("auto refreshes the queue while the signed-in user keeps the page open", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      window.history.pushState({}, "", "/");
+      const client = createUiTestClient();
+      render(<App client={client} />);
+
+      expect(await screen.findByText("还没有 Memo")).toBeInTheDocument();
+
+      await client.publishMemo({
+        title: "安卓端自动同步 Memo",
+        content: "用户不操作时也应自动出现在 PC 队列。",
+        todos: []
+      });
+
+      expect(screen.queryByText("安卓端自动同步 Memo")).not.toBeInTheDocument();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(await screen.findByText("安卓端自动同步 Memo")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("opens direct routes for capture, settings, history, and memo detail", async () => {

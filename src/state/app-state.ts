@@ -1,9 +1,11 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiClient, ApiRequestError, apiClient } from "../api/client";
 import { createAndroidBackButtonHandler } from "../native/android-back-button";
 import { createNativeBridge, type ExternalCapturePayload } from "../native/native-bridge";
 import { DEFAULT_PROMPT } from "../shared/ai-defaults";
 import type { AiSettingsView, AuthUserView, DraftTodoInput, Memo, PublishMemoInput, SyncStatusView } from "../types";
+import { memoTaskQueryKeys } from "./query-keys";
 
 export type Page = "capture" | "memos" | "memoDetail" | "settings" | "history";
 export type PrimaryPage = "capture" | "memos" | "settings";
@@ -18,6 +20,7 @@ export interface DraftState {
   title: string;
   content: string;
   todos: DraftTodoInput[];
+  titleVisible: boolean;
 }
 
 export interface AiSettingsDraft {
@@ -81,6 +84,7 @@ export interface AppState {
   addDraftTodo: (title: string) => void;
   removeDraftTodo: (index: number) => void;
   moveDraftTodo: (index: number, direction: "up" | "down") => void;
+  flushDraft: () => Promise<void>;
   analyzeDraft: () => Promise<void>;
   publishDraft: () => Promise<void>;
   toggleTodo: (todoId: string) => Promise<void>;
@@ -94,6 +98,7 @@ export interface AppState {
   archiveActiveMemo: () => Promise<void>;
   restoreMemo: (memoId: string) => Promise<void>;
   refreshMemos: () => Promise<void>;
+  isRefreshingMemos: boolean;
   refreshHistory: () => Promise<void>;
   searchHistory: (query: string) => Promise<void>;
   bulkDeleteHistory: (memoIds: string[]) => Promise<void>;
@@ -108,7 +113,8 @@ export interface AppState {
 const emptyDraft: DraftState = {
   title: "",
   content: "",
-  todos: []
+  todos: [],
+  titleVisible: false
 };
 
 const defaultAiSettingsDraft: AiSettingsDraft = {
@@ -121,41 +127,188 @@ const defaultAiSettingsDraft: AiSettingsDraft = {
 const localCaptureDraftsKey = "memotask.localCaptureDrafts";
 
 export function useMemoTaskState(client: ApiClient = apiClient): AppState {
+  const queryClient = useQueryClient();
   const initialRoute = routeFromPath();
   const [page, setPageState] = useState<Page>(initialRoute.page);
   const [routeMemoId, setRouteMemoId] = useState<string | null>(initialRoute.memoId);
-  const [memos, setMemos] = useState<Memo[]>([]);
-  const [activeMemo, setActiveMemo] = useState<Memo | null>(null);
-  const [historyMemos, setHistoryMemos] = useState<Memo[]>([]);
   const [historyQuery, setHistoryQuery] = useState("");
-  const [recentDrafts, setRecentDrafts] = useState<Memo[]>([]);
   const [localDrafts, setLocalDrafts] = useState<LocalCaptureDraft[]>(() => readLocalCaptureDrafts());
   const [draft, setDraft] = useState<DraftState>(emptyDraft);
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
   const [captureMessage, setCaptureMessage] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [aiSettings, setAiSettings] = useState<AiSettingsView | null>(null);
   const [aiSettingsDraft, setAiSettingsDraft] = useState<AiSettingsDraft>(defaultAiSettingsDraft);
-  const [syncStatus, setSyncStatus] = useState<SyncStatusView | null>(null);
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
   const [historyMessage, setHistoryMessage] = useState<string | null>(null);
   const [detailMessage, setDetailMessage] = useState<string | null>(null);
   const [lastHistoryDeleteOperationId, setLastHistoryDeleteOperationId] = useState<string | null>(null);
   const [authMode, setAuthModeState] = useState<AuthMode>(() => authModeFromPath(window.location.pathname) ?? "checking");
   const [authUser, setAuthUser] = useState<AuthUserView | null>(null);
+  const queryUserId = authUser?.id ?? "__anonymous__";
   const [authEmail, setAuthEmail] = useState("");
   const [authMessage, setAuthMessage] = useState<string | null>(null);
   const [verificationCode, setVerificationCode] = useState("");
   const [resetToken, setResetToken] = useState(new URLSearchParams(window.location.search).get("token") ?? "");
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshingMemos, setIsRefreshingMemos] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nativeBridge = useMemo(() => createNativeBridge(), []);
   const pendingExternalCaptureRef = useRef<ExternalCapturePayload | null>(null);
+  const authGenerationRef = useRef(0);
+  const authUserIdRef = useRef<string | null>(null);
   const authModeRef = useRef<AuthMode>(authMode);
+  const draftRef = useRef<DraftState>(draft);
+  const currentDraftIdRef = useRef<string | null>(currentDraftId);
+  const draftSaveInFlightRef = useRef<{ signature: string; promise: Promise<string | null> } | null>(null);
+  const draftSaveRequestIdRef = useRef(0);
   const historyRequestIdRef = useRef(0);
+  const aiSettingsDraftDirtyRef = useRef(false);
+  const aiSettingsDraftSourceRef = useRef<string | null>(null);
+  const isAuthenticated = authMode === "authenticated";
+  const memosQuery = useQuery({
+    queryKey: memoTaskQueryKeys.memos.list(queryUserId),
+    queryFn: () => client.listMemos(),
+    enabled: isAuthenticated && Boolean(authUser),
+    refetchInterval: isAuthenticated && page === "memos" ? 10_000 : false
+  });
+  const activeMemoQuery = useQuery({
+    queryKey: routeMemoId ? memoTaskQueryKeys.memos.detail(queryUserId, routeMemoId) : memoTaskQueryKeys.memos.detail(queryUserId, "__none__"),
+    queryFn: () => client.getMemo(routeMemoId ?? ""),
+    enabled: isAuthenticated && Boolean(authUser) && page === "memoDetail" && Boolean(routeMemoId),
+    initialData: () =>
+      routeMemoId
+        ? queryClient.getQueryData<Memo>(memoTaskQueryKeys.memos.detail(queryUserId, routeMemoId)) ??
+          queryClient.getQueryData<Memo[]>(memoTaskQueryKeys.memos.list(queryUserId))?.find((memo) => memo.id === routeMemoId)
+        : undefined
+  });
+  const recentDraftsQuery = useQuery({
+    queryKey: memoTaskQueryKeys.drafts.recent(queryUserId),
+    queryFn: () => client.listRecentDrafts(),
+    enabled: isAuthenticated && Boolean(authUser) && page === "capture"
+  });
+  const historyMemosQuery = useQuery({
+    queryKey: memoTaskQueryKeys.history.list(queryUserId, historyQuery),
+    queryFn: () => (historyQuery.trim() ? client.searchHistory(historyQuery) : client.listHistory()),
+    enabled: isAuthenticated && Boolean(authUser) && page === "history"
+  });
+  const aiSettingsQuery = useQuery({
+    queryKey: memoTaskQueryKeys.settings.ai(queryUserId),
+    queryFn: () => client.getAiSettings(),
+    enabled: isAuthenticated && Boolean(authUser) && page === "settings"
+  });
+  const syncStatusQuery = useQuery({
+    queryKey: memoTaskQueryKeys.settings.sync(queryUserId),
+    queryFn: () => client.getSyncStatus(),
+    enabled: isAuthenticated && Boolean(authUser) && page === "settings"
+  });
+  const memos = memosQuery.data ?? [];
+  const activeMemo = page === "memoDetail" && routeMemoId ? (activeMemoQuery.data ?? null) : null;
+  const historyMemos = historyMemosQuery.data ?? [];
+  const recentDrafts = recentDraftsQuery.data ?? [];
+  const aiSettings = aiSettingsQuery.data ?? null;
+  const syncStatus = syncStatusQuery.data ?? null;
   const activePrimary = page === "history" || page === "memoDetail" ? "memos" : page;
   const title = useMemo(() => pageTitle(page), [page]);
   authModeRef.current = authMode;
+  authUserIdRef.current = authUser?.id ?? null;
+  draftRef.current = draft;
+  currentDraftIdRef.current = currentDraftId;
+
+  function setMemos(next: Memo[] | ((current: Memo[]) => Memo[])): Memo[] {
+    const userId = activeQueryUserId();
+    const current = queryClient.getQueryData<Memo[]>(memoTaskQueryKeys.memos.list(userId)) ?? memos;
+    const nextMemos = typeof next === "function" ? next(current) : next;
+    queryClient.setQueryData(memoTaskQueryKeys.memos.list(userId), nextMemos);
+    for (const memo of nextMemos) {
+      queryClient.setQueryData(memoTaskQueryKeys.memos.detail(userId, memo.id), memo);
+    }
+    return nextMemos;
+  }
+
+  function setActiveMemo(next: Memo | null | ((current: Memo | null) => Memo | null)): void {
+    const userId = activeQueryUserId();
+    const currentMemoId = activeMemo?.id ?? routeMemoId;
+    const currentMemo = currentMemoId ? (queryClient.getQueryData<Memo>(memoTaskQueryKeys.memos.detail(userId, currentMemoId)) ?? activeMemo) : activeMemo;
+    const nextMemo = typeof next === "function" ? next(currentMemo) : next;
+    if (!nextMemo) {
+      return;
+    }
+
+    queryClient.setQueryData(memoTaskQueryKeys.memos.detail(userId, nextMemo.id), nextMemo);
+  }
+
+  function setHistoryMemos(next: Memo[] | ((current: Memo[]) => Memo[]), query = historyQuery): Memo[] {
+    const queryKey = memoTaskQueryKeys.history.list(activeQueryUserId(), query);
+    const current = queryClient.getQueryData<Memo[]>(queryKey) ?? historyMemos;
+    const nextHistoryMemos = typeof next === "function" ? next(current) : next;
+    queryClient.setQueryData(queryKey, nextHistoryMemos);
+    return nextHistoryMemos;
+  }
+
+  function setRecentDrafts(next: Memo[] | ((current: Memo[]) => Memo[])): Memo[] {
+    const userId = activeQueryUserId();
+    const current = queryClient.getQueryData<Memo[]>(memoTaskQueryKeys.drafts.recent(userId)) ?? recentDrafts;
+    const nextDrafts = typeof next === "function" ? next(current) : next;
+    queryClient.setQueryData(memoTaskQueryKeys.drafts.recent(userId), nextDrafts);
+    return nextDrafts;
+  }
+
+  function setAiSettings(next: AiSettingsView): void {
+    queryClient.setQueryData(memoTaskQueryKeys.settings.ai(activeQueryUserId()), next);
+  }
+
+  function setSyncStatus(next: SyncStatusView | null): void {
+    queryClient.setQueryData(memoTaskQueryKeys.settings.sync(activeQueryUserId()), next);
+  }
+
+  function invalidateMemoQueries(): Promise<void> {
+    return queryClient.invalidateQueries({ queryKey: memoTaskQueryKeys.memos.all(activeQueryUserId()) });
+  }
+
+  function invalidateHistoryQueries(): Promise<void> {
+    return queryClient.invalidateQueries({ queryKey: memoTaskQueryKeys.history.all(activeQueryUserId()) });
+  }
+
+  function invalidateDraftQueries(): Promise<void> {
+    return queryClient.invalidateQueries({ queryKey: memoTaskQueryKeys.drafts.all(activeQueryUserId()) });
+  }
+
+  function invalidateSettingsQueries(): Promise<void> {
+    return queryClient.invalidateQueries({ queryKey: memoTaskQueryKeys.settings.all(activeQueryUserId()) });
+  }
+
+  function activeQueryUserId(): string {
+    return authUserIdRef.current ?? authUser?.id ?? queryUserId;
+  }
+
+  function advanceAuthGeneration(user: AuthUserView | null) {
+    authGenerationRef.current += 1;
+    authUserIdRef.current = user?.id ?? null;
+    setAuthUser(user);
+  }
+
+  function activateAuthenticatedUser(user: AuthUserView): { generation: number; userId: string } {
+    advanceAuthGeneration(user);
+    return { generation: authGenerationRef.current, userId: user.id };
+  }
+
+  function captureAuthSnapshot(): { generation: number; userId: string | null } {
+    return { generation: authGenerationRef.current, userId: authUserIdRef.current };
+  }
+
+  function isCurrentAuthSnapshot(snapshot: { generation: number; userId: string | null }): boolean {
+    return (
+      authModeRef.current === "authenticated" &&
+      snapshot.userId !== null &&
+      authGenerationRef.current === snapshot.generation &&
+      authUserIdRef.current === snapshot.userId
+    );
+  }
+
+  async function clearAuthenticatedQueries() {
+    await queryClient.cancelQueries({ queryKey: ["users"] });
+    queryClient.removeQueries({ queryKey: ["users"] });
+  }
 
   useEffect(() => {
     if (window.location.pathname === "/") {
@@ -178,27 +331,6 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, [memos]);
-
-  useEffect(() => {
-    if (authMode !== "authenticated") {
-      return;
-    }
-    if (page === "capture") {
-      void refreshDrafts();
-    }
-    if (page === "history") {
-      void refreshHistory();
-    }
-    if (page === "settings") {
-      void refreshSettings();
-    }
-  }, [page, authMode]);
-
-  useEffect(() => {
-    if (authMode === "authenticated" && page === "memoDetail" && routeMemoId) {
-      void loadMemoDetail(routeMemoId);
-    }
-  }, [page, routeMemoId, authMode]);
 
   useEffect(() => {
     if (authMode !== "authenticated") {
@@ -268,14 +400,52 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     return () => document.removeEventListener("backbutton", handleBackButton);
   }, [authMode, nativeBridge, page]);
 
+  useEffect(() => {
+    if (!aiSettings || aiSettingsDraftDirtyRef.current) {
+      return;
+    }
+
+    aiSettingsDraftSourceRef.current = aiSettingsSignature(aiSettings);
+    setAiSettingsDraft({
+      baseUrl: aiSettings.baseUrl,
+      model: aiSettings.model,
+      apiKey: "",
+      promptTemplate: aiSettings.promptTemplate
+    });
+  }, [aiSettings]);
+
+  useEffect(() => {
+    const queryError =
+      memosQuery.error ??
+      activeMemoQuery.error ??
+      recentDraftsQuery.error ??
+      historyMemosQuery.error ??
+      aiSettingsQuery.error ??
+      syncStatusQuery.error;
+    if (!queryError) {
+      return;
+    }
+
+    handleRequestError(queryError);
+  }, [
+    activeMemoQuery.error,
+    aiSettingsQuery.error,
+    historyMemosQuery.error,
+    memosQuery.error,
+    recentDraftsQuery.error,
+    syncStatusQuery.error
+  ]);
+
   async function checkAuth() {
     await run(async () => {
       const user = await client.getCurrentUser();
-      setAuthUser(user);
+      queryClient.setQueryData(memoTaskQueryKeys.auth.me, user);
       if (!user) {
+        advanceAuthGeneration(null);
         setAuthMode(authModeFromPath(window.location.pathname) ?? "login");
         return;
       }
+      const authSnapshot = activateAuthenticatedUser(user);
       setAuthEmail(user.email);
       if (!user.emailVerified) {
         setAuthMode("unverified");
@@ -285,20 +455,21 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
       if (isAuthPath(window.location.pathname)) {
         applyRoute({ page: "memos", memoId: null }, true);
       }
-      await refreshMemos();
+      void refreshMemos(authSnapshot);
     });
   }
 
   async function login(email: string, password: string) {
     await run(async () => {
       const user = await client.login({ email, password });
-      setAuthUser(user);
+      queryClient.setQueryData(memoTaskQueryKeys.auth.me, user);
+      const authSnapshot = activateAuthenticatedUser(user);
       setAuthEmail(user.email);
       setAuthMessage(null);
       setAuthModeState(user.emailVerified ? "authenticated" : "unverified");
       if (user.emailVerified) {
         applyRoute({ page: "memos", memoId: null }, true);
-        await refreshMemos();
+        void refreshMemos(authSnapshot);
       }
     });
   }
@@ -306,7 +477,8 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   async function register(email: string, password: string) {
     await run(async () => {
       const user = await client.register({ email, password });
-      setAuthUser(user);
+      queryClient.setQueryData(memoTaskQueryKeys.auth.me, user);
+      activateAuthenticatedUser(user);
       setAuthEmail(user.email);
       setAuthMessage("验证码已发送，请查看邮箱");
       setVerificationCode(readTestToken("getLatestVerificationCode"));
@@ -317,12 +489,13 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   async function logout() {
     await run(async () => {
       await client.logout();
-      setAuthUser(null);
+      await clearAuthenticatedQueries();
+      advanceAuthGeneration(null);
       setAuthEmail("");
       setVerificationCode("");
       setResetToken("");
-      setMemos([]);
       setActiveMemo(null);
+      queryClient.clear();
       setAuthMessage(null);
       setAuthMode("login");
     });
@@ -340,12 +513,13 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   async function resetPassword(password: string) {
     await run(async () => {
       const user = await client.resetPassword({ token: resetToken, password });
-      setAuthUser(user);
+      queryClient.setQueryData(memoTaskQueryKeys.auth.me, user);
+      const authSnapshot = activateAuthenticatedUser(user);
       setAuthEmail(user.email);
       setAuthMessage(null);
       setAuthModeState("authenticated");
       applyRoute({ page: "memos", memoId: null }, true);
-      await refreshMemos();
+      void refreshMemos(authSnapshot);
     });
   }
 
@@ -360,7 +534,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   async function verifyEmail(code: string) {
     await run(async () => {
       const user = await client.verifyEmail(code);
-      setAuthUser(null);
+      advanceAuthGeneration(null);
       setAuthEmail(user.email);
       setVerificationCode("");
       setAuthMode("login");
@@ -403,27 +577,31 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     try {
       await action();
     } catch (caught) {
-      if (caught instanceof ApiRequestError && caught.code === "AUTH_REQUIRED") {
-        resetAuthenticatedState();
-        setAuthMode("login");
-        setError(caught.message);
-        return;
-      }
-      if (caught instanceof ApiRequestError && caught.code === "EMAIL_NOT_VERIFIED") {
-        resetAuthenticatedState();
-        setAuthMode("unverified");
-        setError(caught.message);
-        return;
-      }
-      setError(caught instanceof Error ? caught.message : "请求失败，请稍后重试");
+      handleRequestError(caught);
     } finally {
       setIsLoading(false);
     }
   }
 
+  function handleRequestError(caught: unknown) {
+    if (caught instanceof ApiRequestError && caught.code === "AUTH_REQUIRED") {
+      resetAuthenticatedState();
+      setAuthMode("login");
+      setError(caught.message);
+      return;
+    }
+    if (caught instanceof ApiRequestError && caught.code === "EMAIL_NOT_VERIFIED") {
+      resetAuthenticatedState();
+      setAuthMode("unverified");
+      setError(caught.message);
+      return;
+    }
+    setError(caught instanceof Error ? caught.message : "请求失败，请稍后重试");
+  }
+
   function resetAuthenticatedState() {
-    setAuthUser(null);
-    setMemos([]);
+    void clearAuthenticatedQueries();
+    advanceAuthGeneration(null);
     setActiveMemo(null);
     setHistoryMemos([]);
     setRecentDrafts([]);
@@ -432,9 +610,17 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     setSyncStatus(null);
   }
 
-  async function refreshMemos() {
+  async function refreshMemos(authSnapshot = captureAuthSnapshot()) {
+    setIsRefreshingMemos(true);
     await run(async () => {
-      setMemos(await client.listMemos());
+      try {
+        const nextMemos = await client.listMemos();
+        if (isCurrentAuthSnapshot(authSnapshot)) {
+          setMemos(nextMemos);
+        }
+      } finally {
+        setIsRefreshingMemos(false);
+      }
     });
   }
 
@@ -444,6 +630,9 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   }
 
   function setPage(page: Page) {
+    if (page !== "capture") {
+      void flushDraft();
+    }
     applyRoute({ page, memoId: null }, true);
   }
 
@@ -474,9 +663,13 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   }
 
   async function loadMemoDetail(memoId: string) {
+    const authSnapshot = captureAuthSnapshot();
     await run(async () => {
-      setActiveMemo(await client.getMemo(memoId));
-      setDetailMessage(null);
+      const memo = await client.getMemo(memoId);
+      if (isCurrentAuthSnapshot(authSnapshot)) {
+        setActiveMemo(memo);
+        setDetailMessage(null);
+      }
     });
   }
 
@@ -485,6 +678,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   }
 
   function updateAiSettingsDraft(patch: Partial<AiSettingsDraft>) {
+    aiSettingsDraftDirtyRef.current = true;
     setAiSettingsDraft((current) => ({ ...current, ...patch }));
   }
 
@@ -498,7 +692,8 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     setDraft({
       title: selected.title === "未命名 Memo" ? "" : selected.title,
       content: selected.content,
-      todos: []
+      todos: [],
+      titleVisible: hasExplicitTitle(selected.title)
     });
     setCaptureMessage("已载入最近草稿");
   }
@@ -513,7 +708,8 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     setDraft({
       title: selected.title === "未命名 Memo" ? "" : selected.title,
       content: selected.content,
-      todos: []
+      todos: [],
+      titleVisible: hasExplicitTitle(selected.title)
     });
     setCaptureMessage("已载入本地草稿");
     applyRoute({ page: "capture", memoId: null }, true);
@@ -524,7 +720,8 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     setDraft({
       title: payload.title,
       content: payload.content,
-      todos: []
+      todos: [],
+      titleVisible: Boolean(payload.title.trim())
     });
     setCaptureMessage(payload.source === "android-share" ? "已接收外部分享" : "已打开快速记录");
     applyRoute({ page: "capture", memoId: null }, true);
@@ -563,26 +760,71 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   }
 
   async function refreshDrafts() {
+    const authSnapshot = captureAuthSnapshot();
     await run(async () => {
-      setRecentDrafts(await client.listRecentDrafts());
+      const drafts = await client.listRecentDrafts();
+      if (isCurrentAuthSnapshot(authSnapshot)) {
+        setRecentDrafts(drafts);
+      }
     });
   }
 
-  async function saveCurrentDraft(): Promise<string | null> {
-    if (!draft.content.trim()) {
-      return currentDraftId;
+  async function flushDraft() {
+    const snapshot = draftRef.current;
+    if (authModeRef.current !== "authenticated" || !snapshot.content.trim()) {
+      return;
     }
 
+    await saveCurrentDraft(snapshot, currentDraftIdRef.current);
+  }
+
+  async function saveCurrentDraft(snapshot: DraftState = draftRef.current, draftId: string | null = currentDraftIdRef.current): Promise<string | null> {
+    if (!snapshot.content.trim()) {
+      return draftId;
+    }
+
+    const signature = JSON.stringify({
+      draftId,
+      title: snapshot.title.trim(),
+      content: snapshot.content
+    });
+    if (draftSaveInFlightRef.current?.signature === signature) {
+      return draftSaveInFlightRef.current.promise;
+    }
+
+    const savePromise = saveDraftSnapshot(snapshot, draftId);
+    draftSaveInFlightRef.current = { signature, promise: savePromise };
+    try {
+      return await savePromise;
+    } finally {
+      if (draftSaveInFlightRef.current?.promise === savePromise) {
+        draftSaveInFlightRef.current = null;
+      }
+    }
+  }
+
+  async function saveDraftSnapshot(snapshot: DraftState, draftId: string | null): Promise<string | null> {
+    const requestId = draftSaveRequestIdRef.current + 1;
+    const authSnapshot = captureAuthSnapshot();
+    draftSaveRequestIdRef.current = requestId;
     let savedDraftId: string | null = null;
     await run(async () => {
       const draftInput = {
-        title: draft.title.trim() || undefined,
-        content: draft.content
+        title: snapshot.title.trim() || undefined,
+        content: snapshot.content
       };
-      const savedDraft = currentDraftId ? await client.updateDraft(currentDraftId, draftInput) : await client.createDraft(draftInput);
+      const savedDraft = draftId ? await client.updateDraft(draftId, draftInput) : await client.createDraft(draftInput);
       savedDraftId = savedDraft.id;
+      if (requestId !== draftSaveRequestIdRef.current || !isCurrentAuthSnapshot(authSnapshot)) {
+        return;
+      }
+      currentDraftIdRef.current = savedDraft.id;
       setCurrentDraftId(savedDraft.id);
-      setRecentDrafts(await client.listRecentDrafts());
+      const drafts = await client.listRecentDrafts();
+      if (requestId !== draftSaveRequestIdRef.current || !isCurrentAuthSnapshot(authSnapshot)) {
+        return;
+      }
+      setRecentDrafts(drafts);
       setCaptureMessage("草稿已保存");
     });
     return savedDraftId;
@@ -605,6 +847,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
       setDraft((current) => ({
         ...current,
         title: result.title,
+        titleVisible: true,
         todos: result.todos.map((todo) => ({
           title: todo.title,
           notes: todo.notes,
@@ -624,15 +867,17 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
 
     const input: PublishMemoInput = {
       draftId: currentDraftId ?? undefined,
-      title: draft.title.trim() || "未命名 Memo",
+      title: draft.title.trim() || deriveMemoTitle(draft.content),
       content: draft.content,
       todos: draft.todos
     };
+    draftSaveRequestIdRef.current += 1;
 
     setCaptureMessage("发布中");
     await run(async () => {
       try {
-        await client.publishMemo(input);
+        const published = await client.publishMemo(input);
+        setMemos((current) => [published, ...current.filter((memo) => memo.id !== published.id)]);
       } catch (caught) {
         const nextLocalDrafts = saveLocalCaptureDraft(input);
         setLocalDrafts(nextLocalDrafts);
@@ -642,10 +887,14 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
       }
       setDraft(emptyDraft);
       setCurrentDraftId(null);
+      currentDraftIdRef.current = null;
       setCaptureMessage(null);
-      setRecentDrafts(await client.listRecentDrafts());
+      const drafts = await client.listRecentDrafts();
+      setRecentDrafts(drafts);
       applyRoute({ page: "memos", memoId: null }, true);
-      setMemos(await client.listMemos());
+      void invalidateHistoryQueries();
+      void invalidateDraftQueries();
+      void refreshMemos();
       nativeBridge.notifyCaptureSaved("Memo 已发布到队列");
     });
   }
@@ -669,6 +918,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
         const nextMemos = await client.listMemos();
         setMemos(nextMemos);
         setActiveMemo((current) => nextMemos.find((memo) => memo.id === current?.id) ?? current);
+        void invalidateHistoryQueries();
       } catch (caught) {
         setMemos(previousMemos);
         setActiveMemo(previousActiveMemo);
@@ -684,12 +934,19 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
       return;
     }
 
+    const previousMemos = memos;
     const nextMemos = [...memos];
     [nextMemos[currentIndex], nextMemos[targetIndex]] = [nextMemos[targetIndex], nextMemos[currentIndex]];
 
     await run(async () => {
-      setMemos(nextMemos);
-      setMemos(await client.reorderMemos(nextMemos.map((memo) => memo.id)));
+      try {
+        setMemos(nextMemos);
+        const orderedMemos = await client.reorderMemos(nextMemos.map((memo) => memo.id));
+        setMemos(orderedMemos);
+      } catch (caught) {
+        setMemos(previousMemos);
+        throw caught;
+      }
     });
   }
 
@@ -699,9 +956,16 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
       return;
     }
 
+    const previousMemos = memos;
     await run(async () => {
-      setMemos(nextMemos);
-      setMemos(await client.reorderMemos(memoIds));
+      try {
+        setMemos(nextMemos);
+        const orderedMemos = await client.reorderMemos(memoIds);
+        setMemos(orderedMemos);
+      } catch (caught) {
+        setMemos(previousMemos);
+        throw caught;
+      }
     });
   }
 
@@ -714,7 +978,8 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     await run(async () => {
       const updated = await client.updateMemo(activeMemo.id, input);
       setActiveMemo(updated);
-      setMemos(await client.listMemos());
+      setMemos(replaceMemo(memos, updated));
+      void invalidateMemoQueries();
       setDetailMessage("Memo 已保存");
     });
   }
@@ -747,10 +1012,17 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
 
     await run(async () => {
       try {
-        await client.createTodo(activeMemo.id, { title: trimmed, notes: null, generatedByAi: false });
+        const createdTodo = await client.createTodo(activeMemo.id, { title: trimmed, notes: null, generatedByAi: false });
+        const memoWithCreatedTodo = {
+          ...optimisticMemo,
+          todos: optimisticMemo.todos.map((todo) => (todo.id === optimisticTodo.id ? createdTodo : todo))
+        };
+        setActiveMemo(memoWithCreatedTodo);
+        setMemos(replaceMemo(memos, memoWithCreatedTodo));
         const nextMemos = await client.listMemos();
         setMemos(nextMemos);
-        setActiveMemo(nextMemos.find((memo) => memo.id === activeMemo.id) ?? optimisticMemo);
+        setActiveMemo(nextMemos.find((memo) => memo.id === activeMemo.id) ?? memoWithCreatedTodo);
+        void invalidateHistoryQueries();
       } catch (caught) {
         setMemos(previousMemos);
         setActiveMemo(previousActiveMemo);
@@ -770,6 +1042,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
       const nextMemos = await client.listMemos();
       setMemos(nextMemos);
       setActiveMemo(nextMemos.find((memo) => memo.id === activeMemo.id) ?? activeMemo);
+      void invalidateHistoryQueries();
     });
   }
 
@@ -791,6 +1064,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
         const nextMemos = await client.listMemos();
         setMemos(nextMemos);
         setActiveMemo(nextMemos.find((memo) => memo.id === activeMemo.id) ?? optimisticMemo);
+        void invalidateHistoryQueries();
       } catch (caught) {
         setMemos(previousMemos);
         setActiveMemo(previousActiveMemo);
@@ -804,6 +1078,8 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
       return;
     }
 
+    const previousMemos = memos;
+    const previousActiveMemo = activeMemo;
     const orderedTodos = todoIds
       .map((todoId) => activeMemo.todos.find((todo) => todo.id === todoId))
       .filter((todo): todo is Memo["todos"][number] => Boolean(todo));
@@ -812,11 +1088,18 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     }
 
     await run(async () => {
-      setActiveMemo({ ...activeMemo, todos: orderedTodos });
-      await client.reorderTodos(activeMemo.id, todoIds);
-      const nextMemos = await client.listMemos();
-      setMemos(nextMemos);
-      setActiveMemo(nextMemos.find((memo) => memo.id === activeMemo.id) ?? { ...activeMemo, todos: orderedTodos });
+      try {
+        setActiveMemo({ ...activeMemo, todos: orderedTodos });
+        await client.reorderTodos(activeMemo.id, todoIds);
+        const nextMemos = await client.listMemos();
+        setMemos(nextMemos);
+        setActiveMemo(nextMemos.find((memo) => memo.id === activeMemo.id) ?? { ...activeMemo, todos: orderedTodos });
+        void invalidateHistoryQueries();
+      } catch (caught) {
+        setMemos(previousMemos);
+        setActiveMemo(previousActiveMemo);
+        throw caught;
+      }
     });
   }
 
@@ -827,20 +1110,23 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
 
     setDetailMessage("归档中");
     await run(async () => {
-      await client.archiveMemo(activeMemo.id);
+      const archived = await client.archiveMemo(activeMemo.id);
       setActiveMemo(null);
-      setMemos(await client.listMemos());
+      setMemos((current) => current.filter((memo) => memo.id !== archived.id));
       applyRoute({ page: "history", memoId: null }, true);
-      setHistoryMemos(await client.listHistory());
+      const nextHistory = await client.listHistory();
+      setHistoryMemos(nextHistory, "");
+      await Promise.all([invalidateMemoQueries(), invalidateHistoryQueries()]);
     });
   }
 
   async function restoreMemo(memoId: string) {
     setHistoryMessage("恢复中");
     await run(async () => {
-      await client.restoreMemo(memoId);
+      const restored = await client.restoreMemo(memoId);
       applyRoute({ page: "memos", memoId: null }, true);
-      setMemos(await client.listMemos());
+      setMemos((current) => [restored, ...current.filter((memo) => memo.id !== restored.id)]);
+      await Promise.all([invalidateMemoQueries(), invalidateHistoryQueries()]);
       setHistoryMessage("已恢复 Memo");
     });
   }
@@ -848,17 +1134,17 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
   async function loadHistory(query: string) {
     const requestId = historyRequestIdRef.current + 1;
     historyRequestIdRef.current = requestId;
+    const authSnapshot = captureAuthSnapshot();
     await run(async () => {
       const nextHistoryMemos = query.trim() ? await client.searchHistory(query) : await client.listHistory();
-      if (requestId === historyRequestIdRef.current) {
-        setHistoryMemos(nextHistoryMemos);
+      if (requestId === historyRequestIdRef.current && isCurrentAuthSnapshot(authSnapshot)) {
+        setHistoryMemos(nextHistoryMemos, query);
       }
     });
   }
 
   async function searchHistory(query: string) {
     setHistoryQuery(query);
-    await loadHistory(query);
   }
 
   async function bulkDeleteHistory(memoIds: string[]) {
@@ -872,6 +1158,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
       setLastHistoryDeleteOperationId(result.operation.id);
       setHistoryMessage(`已删除 ${result.deletedCount} 个 Memo`);
       setHistoryMemos(historyQuery.trim() ? await client.searchHistory(historyQuery) : await client.listHistory());
+      await Promise.all([invalidateHistoryQueries(), invalidateMemoQueries()]);
     });
   }
 
@@ -886,12 +1173,17 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
       setLastHistoryDeleteOperationId(null);
       setHistoryMessage("已撤销删除");
       setHistoryMemos(historyQuery.trim() ? await client.searchHistory(historyQuery) : await client.listHistory());
+      await Promise.all([invalidateHistoryQueries(), invalidateMemoQueries()]);
     });
   }
 
   async function refreshSettings() {
+    const authSnapshot = captureAuthSnapshot();
     await run(async () => {
       const [settings, status] = await Promise.all([client.getAiSettings(), client.getSyncStatus()]);
+      if (!isCurrentAuthSnapshot(authSnapshot)) {
+        return;
+      }
       setAiSettings(settings);
       setSyncStatus(status);
       setAiSettingsDraft({
@@ -931,6 +1223,8 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
         promptTemplate: aiSettingsDraft.promptTemplate
       });
       setAiSettings(nextSettings);
+      aiSettingsDraftDirtyRef.current = false;
+      aiSettingsDraftSourceRef.current = aiSettingsSignature(nextSettings);
       setAiSettingsDraft({
         baseUrl: nextSettings.baseUrl,
         model: nextSettings.model,
@@ -938,6 +1232,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
         promptTemplate: nextSettings.promptTemplate
       });
       setSettingsMessage("已保存 AI 设置");
+      void invalidateSettingsQueries();
     });
   }
 
@@ -946,8 +1241,11 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     await run(async () => {
       const nextSettings = await client.resetAiPrompt();
       setAiSettings(nextSettings);
+      aiSettingsDraftDirtyRef.current = false;
+      aiSettingsDraftSourceRef.current = aiSettingsSignature(nextSettings);
       setAiSettingsDraft((current) => ({ ...current, promptTemplate: nextSettings.promptTemplate }));
       setSettingsMessage("已恢复默认 Prompt");
+      void invalidateSettingsQueries();
     });
   }
 
@@ -1014,6 +1312,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     addDraftTodo,
     removeDraftTodo,
     moveDraftTodo,
+    flushDraft,
     analyzeDraft,
     publishDraft,
     toggleTodo,
@@ -1027,6 +1326,7 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     archiveActiveMemo,
     restoreMemo,
     refreshMemos,
+    isRefreshingMemos,
     refreshHistory,
     searchHistory,
     bulkDeleteHistory,
@@ -1109,13 +1409,35 @@ function readLocalCaptureDrafts(): LocalCaptureDraft[] {
 function saveLocalCaptureDraft(input: PublishMemoInput): LocalCaptureDraft[] {
   const nextDraft: LocalCaptureDraft = {
     id: `local-${Date.now()}`,
-    title: input.title || "未命名 Memo",
+    title: input.title || deriveMemoTitle(input.content),
     content: input.content,
     createdAt: new Date().toISOString()
   };
   const nextDrafts = [nextDraft, ...readLocalCaptureDrafts()].slice(0, 10);
   window.localStorage.setItem(localCaptureDraftsKey, JSON.stringify(nextDrafts));
   return nextDrafts;
+}
+
+export function deriveMemoTitle(content: string): string {
+  const normalized = content.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "未命名 Memo";
+  }
+
+  return normalized.length > 24 ? `${normalized.slice(0, 24)}...` : normalized;
+}
+
+function hasExplicitTitle(title: string): boolean {
+  return title.trim().length > 0 && title !== "未命名 Memo";
+}
+
+function aiSettingsSignature(settings: AiSettingsView): string {
+  return JSON.stringify({
+    baseUrl: settings.baseUrl,
+    model: settings.model,
+    promptTemplate: settings.promptTemplate,
+    updatedAt: settings.updatedAt
+  });
 }
 
 function toggleTodoInMemos(memos: Memo[], todoId: string): Memo[] {

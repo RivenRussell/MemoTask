@@ -1,4 +1,4 @@
-import type { AiSettingsView, AnalyzeDraftResult, AuthUserView, DraftInput, Memo, PublishMemoInput, SyncStatusView } from "../types";
+import type { AiSettingsView, AnalyzeDraftResult, AuthUserView, DraftInput, Memo, MemoTodo, PublishMemoInput, SyncStatusView } from "../types";
 
 interface ApiErrorBody {
   error?: {
@@ -209,12 +209,14 @@ export class ApiClient {
     return body.memo;
   }
 
-  async createTodo(memoId: string, input: { title: string; notes?: string | null; generatedByAi?: boolean }): Promise<void> {
-    await this.request<{ todo: unknown }>(`/api/memos/${memoId}/todos`, {
+  async createTodo(memoId: string, input: { title: string; notes?: string | null; generatedByAi?: boolean }): Promise<MemoTodo> {
+    const body = await this.request<{ todo: MemoTodo }>(`/api/memos/${memoId}/todos`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input)
     });
+    assertPresent(body.todo);
+    return body.todo;
   }
 
   async updateTodo(todoId: string, input: { title: string; notes?: string | null }): Promise<void> {

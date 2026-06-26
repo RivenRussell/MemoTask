@@ -323,6 +323,16 @@ img {
   gap: 18px;
 }
 
+.memos-page-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.queue-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .memos-grid:has(.empty-memo-card) {
   grid-template-columns: minmax(280px, 520px);
 }
@@ -564,7 +574,7 @@ img {
   position: relative;
   min-height: min(620px, calc(100vh - 154px));
   display: grid;
-  grid-template-rows: auto minmax(260px, 1fr) auto;
+  grid-template-rows: auto 1fr auto;
   gap: 0;
   overflow: hidden;
   padding: 34px 34px 26px;

@@ -1,18 +1,23 @@
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
+import { RefreshCw } from "lucide-react";
 import { MemoCard } from "../components/MemoCard";
 import type { Memo } from "../types";
 
 export function MemosPage({
+  isRefreshing,
   memos,
   onMoveMemo,
   onOpenMemo,
+  onRefresh,
   onReorderMemos,
   onToggleTodo
 }: {
+  isRefreshing: boolean;
   memos: Memo[];
   onMoveMemo: (memoId: string, direction: "up" | "down") => void;
   onOpenMemo: (memoId: string) => void;
+  onRefresh: () => void;
   onReorderMemos: (memoIds: string[]) => void;
   onToggleTodo: (todoId: string) => void;
 }) {
@@ -37,28 +42,36 @@ export function MemosPage({
   }
 
   return (
-    <div className="content-grid memos-grid">
-      {memos.length === 0 ? (
-        <section className="soft-card intro-card empty-memo-card">
-          <h2>还没有 Memo</h2>
-        </section>
-      ) : (
-        <DndContext collisionDetection={closestCenter} sensors={sensors} onDragEnd={handleDragEnd}>
-          <SortableContext items={memos.map((memo) => memo.id)} strategy={rectSortingStrategy}>
-            {memos.map((memo, index) => (
-              <MemoCard
-                canMoveDown={index < memos.length - 1}
-                canMoveUp={index > 0}
-                key={memo.id}
-                memo={memo}
-                onMove={onMoveMemo}
-                onOpen={onOpenMemo}
-                onToggleTodo={onToggleTodo}
-              />
-            ))}
-          </SortableContext>
-        </DndContext>
-      )}
+    <div className="memos-page-stack">
+      <div className="queue-toolbar">
+        <button className="secondary-action" type="button" aria-label="刷新队列" disabled={isRefreshing} onClick={onRefresh}>
+          <RefreshCw size={16} aria-hidden="true" />
+          <span>{isRefreshing ? "刷新中" : "刷新"}</span>
+        </button>
+      </div>
+      <div className="content-grid memos-grid">
+        {memos.length === 0 ? (
+          <section className="soft-card intro-card empty-memo-card">
+            <h2>还没有 Memo</h2>
+          </section>
+        ) : (
+          <DndContext collisionDetection={closestCenter} sensors={sensors} onDragEnd={handleDragEnd}>
+            <SortableContext items={memos.map((memo) => memo.id)} strategy={rectSortingStrategy}>
+              {memos.map((memo, index) => (
+                <MemoCard
+                  canMoveDown={index < memos.length - 1}
+                  canMoveUp={index > 0}
+                  key={memo.id}
+                  memo={memo}
+                  onMove={onMoveMemo}
+                  onOpen={onOpenMemo}
+                  onToggleTodo={onToggleTodo}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
+        )}
+      </div>
     </div>
   );
 }

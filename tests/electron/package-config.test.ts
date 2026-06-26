@@ -31,7 +31,7 @@ describe("desktop package configuration", () => {
   it("declares the v3 Electron entrypoint and build scripts", () => {
     const packageJson = readPackageJson();
 
-    expect(packageJson.version).toBe("3.0.0");
+    expect(packageJson.version).toBe("3.1.0");
     expect(packageJson.main).toBe("electron/main.cjs");
     expect(packageJson.scripts).toMatchObject({
       "build:desktop": "tsc --noEmit && vite build --mode desktop",

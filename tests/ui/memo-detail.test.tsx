@@ -11,12 +11,11 @@ describe("MemoTask memo detail workflow", () => {
     const primaryNav = await findPrimaryNav();
 
     await userEvent.click(within(primaryNav).getByRole("button", { name: "记录" }));
-    await userEvent.type(screen.getByLabelText("原始 Memo"), "整理上线前检查");
-    await userEvent.type(screen.getByLabelText("Memo 标题"), "上线检查");
+    await userEvent.type(screen.getByLabelText("原始 Memo"), "上线检查");
     await userEvent.type(screen.getByLabelText("新增 Todo"), "检查 Worker 健康");
     await userEvent.click(screen.getByRole("button", { name: "添加 Todo" }));
     await userEvent.click(screen.getByRole("button", { name: "发布" }));
-    expect(await screen.findByText("上线检查")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "上线检查" })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "打开 上线检查" }));
     expect(screen.getByRole("heading", { name: "Memo 详情" })).toBeInTheDocument();

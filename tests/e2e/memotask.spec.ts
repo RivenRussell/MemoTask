@@ -91,8 +91,7 @@ test("android capture complete history restore smoke", async ({ page }, testInfo
 
   await page.goto("/");
   await page.getByRole("button", { name: "记录" }).last().click();
-  await page.getByLabel("原始 Memo").fill("移动端检查 Memo");
-  await page.getByLabel("Memo 标题").fill("移动端检查");
+  await page.getByLabel("原始 Memo").fill("移动端检查");
   await page.getByLabel("新增 Todo").fill("完成移动端验证");
   await page.getByRole("button", { name: "添加 Todo" }).click();
   await page.getByRole("button", { name: "发布" }).click();
@@ -110,12 +109,11 @@ test("android capture complete history restore smoke", async ({ page }, testInfo
 
 async function publishMemo(page: Page, title: string, content: string, todo: string) {
   await page.getByRole("button", { name: "记录" }).first().click();
-  await page.getByLabel("原始 Memo").fill(content);
-  await page.getByLabel("Memo 标题").fill(title);
+  await page.getByLabel("原始 Memo").fill(title);
   await page.getByLabel("新增 Todo").fill(todo);
   await page.getByRole("button", { name: "添加 Todo" }).click();
   await page.getByRole("button", { name: "发布" }).click();
-  await expect(page.getByText(title)).toBeVisible();
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
 }
 
 async function expectMemoOrder(page: Page, titles: string[]) {

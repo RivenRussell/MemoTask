@@ -64,16 +64,15 @@ describe("MemoTask settings and history workflows", () => {
     const primaryNav = await findPrimaryNav();
 
     await userEvent.click(within(primaryNav).getByRole("button", { name: "记录" }));
-    await userEvent.type(screen.getByLabelText("原始 Memo"), "包含 Cloudflare 部署步骤");
-    await userEvent.type(screen.getByLabelText("Memo 标题"), "部署资料");
+    await userEvent.type(screen.getByLabelText("原始 Memo"), "部署资料");
     await userEvent.type(screen.getByLabelText("新增 Todo"), "检查 Access 配置");
     await userEvent.click(screen.getByRole("button", { name: "添加 Todo" }));
     await userEvent.click(screen.getByRole("button", { name: "发布" }));
-    expect(await screen.findByText("部署资料")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "部署资料" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("checkbox", { name: "检查 Access 配置" }));
     await userEvent.click(screen.getByRole("button", { name: "打开历史" }));
 
-    expect(await screen.findByText("部署资料")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "部署资料" })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText("搜索历史"), "Access");
     expect(await screen.findByText("检查 Access 配置")).toBeInTheDocument();
 
@@ -83,7 +82,7 @@ describe("MemoTask settings and history workflows", () => {
     expect(screen.queryByText("部署资料")).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "撤销删除" }));
-    expect(await screen.findByText("部署资料")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "部署资料" })).toBeInTheDocument();
   });
 
   it("keeps the newest history search results when older searches return later", async () => {
@@ -125,6 +124,38 @@ describe("MemoTask settings and history workflows", () => {
     });
     expect(screen.getByText("Alpha 最新结果")).toBeInTheDocument();
     expect(screen.queryByText("Archive 旧请求结果")).not.toBeInTheDocument();
+  });
+
+  it("does not duplicate history search requests for a single query change", async () => {
+    const requests: string[] = [];
+    const memo = {
+      ...createMemo("history-single-search", "唯一历史", []),
+      status: "history" as const,
+      historyReason: "archived" as const,
+      historyAt: "2026-06-23T09:31:00.000Z"
+    };
+    window.history.pushState({}, "", "/history");
+    render(
+      <App
+        client={createUiTestClient({
+          initialMemos: [memo],
+          onRequest: (url) => requests.push(url)
+        })}
+      />
+    );
+
+    expect(await screen.findByText("唯一历史")).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText("搜索历史"), "z");
+    expect(await screen.findByText("还没有历史 Memo")).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const searchRequests = requests.filter((url) => {
+      const parsed = new URL(url, "http://localhost");
+      return parsed.pathname === "/api/history/search" && parsed.searchParams.get("q") === "z";
+    });
+    expect(searchRequests).toHaveLength(1);
   });
 
   it("shows settings save feedback immediately even when the server is slow", async () => {

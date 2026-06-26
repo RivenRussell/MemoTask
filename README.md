@@ -2,7 +2,7 @@
 
 MemoTask 是一个低压力的个人 Memo 待办整理工具。它的核心思路很简单：先把脑子里的想法、计划、链接、琐事写成一条 Memo，再让人工智能把这条 Memo 内部拆成可执行的待办项。用户不需要一开始就想清楚分类、日期和提醒，只需要先记录，再整理。
 
-当前版本为 **v3.0.0**。这个版本完整继承 v2 网页端能力，并新增 Windows 桌面安装包、Android APK，以及跨端快速记录体验。
+当前版本为 **v3.1.0**。这个版本继续保留 Windows 桌面安装包和 Android APK，并重点优化跨端 Memo 同步、登录启动速度和草稿记录体验。
 
 生产访问地址：
 
@@ -12,7 +12,7 @@ https://memotask.rrwks.cn/login
 
 ## 版本重点
 
-v3.0.0 相比 v2 的最大变化是从“网页访问”扩展为“网页、Windows 桌面端、Android APK”三种入口。桌面端和 Android 端会把 React 构建产物打包到本地应用内，接口仍请求同一个 Cloudflare Worker 和 D1 后端。
+v3.1.0 延续 v3 的“网页、Windows 桌面端、Android APK”三种入口。桌面端和 Android 端会把 React 构建产物打包到本地应用内，接口仍请求同一个 Cloudflare Worker 和 D1 后端；前端 server state 由 TanStack React Query 管理，用手动刷新、窗口聚焦刷新和队列低频轮询保持 PC/Android 列表同步。
 
 主要能力：
 
@@ -30,6 +30,9 @@ v3.0.0 相比 v2 的最大变化是从“网页访问”扩展为“网页、Win
 - Android 端通过 Capacitor 打包为可侧载 APK。
 - 桌面端支持托盘、`Ctrl + Alt + M` 快捷键、快速记录窗口和系统通知。
 - Android 端支持从其他 App 分享文本或链接到 MemoTask。
+- 队列页支持手动刷新，并在页面打开时低频自动刷新，适合同一账号在手机和电脑同时记录。
+- 登录和已登录启动不等待 Memo 列表加载完成，先进入应用界面再后台同步数据。
+- 草稿优先展示正文预览；标题输入默认隐藏，AI 生成标题后可继续手动修改。
 - 发布失败时会保留本地草稿，避免记录内容丢失。
 
 ## 产品理念
@@ -67,6 +70,8 @@ Memo 功能：
 - 快速记录原始 Memo。
 - 草稿自动保存。
 - 最近草稿恢复。
+- 草稿列表在没有显式标题时使用正文作为预览。
+- AI 分析后显示可编辑标题；未手动填写标题时发布会从正文自动生成标题。
 - 发布 Memo 到队列。
 - Memo 队列排序。
 - 上移、下移和拖拽排序。
@@ -99,6 +104,8 @@ Memo 功能：
 跨端体验：
 
 - 手机端和电脑端共用同一套账号数据。
+- 队列页提供“刷新队列”操作。
+- 已登录客户端重新聚焦或保持队列页打开时会自动刷新 Memo 列表。
 - 响应式布局适配安卓手机和桌面浏览器。
 - 生产环境通过 Cloudflare 自定义域名访问。
 - Windows 桌面端安装后可从托盘或 `Ctrl + Alt + M` 快速打开记录窗口。
@@ -299,7 +306,7 @@ npm run desktop:build
 产物位置：
 
 ```text
-release/desktop/MemoTask Setup 3.0.0.exe
+release/desktop/MemoTask Setup 3.1.0.exe
 ```
 
 构建 Android APK：
@@ -453,7 +460,7 @@ POST /api/ai/analyze-draft
 当前发布版本：
 
 ```text
-v3.0.0
+v3.1.0
 ```
 
 重要分支和标签：
@@ -464,7 +471,8 @@ codex/v2-auth           v2 开发和发布分支
 codex/v3-app-packaging  v3 桌面端与 Android 打包分支
 v1                      已存在的 v1 标签
 v2.0.0                  v2 正式标签
-v3.0.0                  v3 正式标签，发布时创建
+v3.0.0                  v3 桌面端与 Android 打包正式标签
+v3.1.0                  v3.1 同步与草稿体验正式标签，发布时创建
 ```
 
 查看版本历史：

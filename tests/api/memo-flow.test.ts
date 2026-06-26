@@ -53,6 +53,20 @@ describe("memo data loop API", () => {
     expect(drafts.drafts[0]).toMatchObject({ id: created.draft.id, title: "更新草稿", content: "更新后的草稿" });
   });
 
+  it("keeps untitled drafts untitled so clients can preview the body text", async () => {
+    const { app } = createTestApi();
+
+    const response = await app.request("/api/drafts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ content: "这是没有标题但很有用的主体想法" })
+    });
+    expect(response.status).toBe(201);
+
+    const drafts = await json(await app.request("/api/drafts/recent"));
+    expect(drafts.drafts[0]).toMatchObject({ title: "", content: "这是没有标题但很有用的主体想法" });
+  });
+
   it("publishes a pure memo to the front of the active queue", async () => {
     const { app } = createTestApi();
 

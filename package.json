@@ -1,6 +1,6 @@
 {
   "name": "memotask",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -29,6 +29,7 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@tanstack/react-query": "^5.101.1",
     "hono": "^4.10.7",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",

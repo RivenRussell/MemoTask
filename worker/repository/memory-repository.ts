@@ -25,7 +25,7 @@ export class MemoryRepository implements MemoRepository {
     const draft: Memo = {
       id: createId("memo"),
       userId,
-      title: input.title?.trim() || "未命名 Memo",
+      title: input.title?.trim() || "",
       content: input.content,
       status: "draft",
       historyReason: null,
@@ -53,7 +53,7 @@ export class MemoryRepository implements MemoRepository {
       return null;
     }
 
-    draft.title = input.title?.trim() || "未命名 Memo";
+    draft.title = input.title?.trim() || "";
     draft.content = input.content;
     draft.updatedAt = now;
     this.trimDrafts(userId, 3);

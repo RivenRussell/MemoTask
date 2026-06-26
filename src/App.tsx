@@ -1,5 +1,7 @@
+import { QueryClientProvider } from "@tanstack/react-query";
+import { useState } from "react";
 import { AppShell } from "./components/AppShell";
-import type { ApiClient } from "./api/client";
+import { apiClient, type ApiClient } from "./api/client";
 import { AuthPage } from "./pages/AuthPage";
 import { CapturePage } from "./pages/CapturePage";
 import { HistoryPage } from "./pages/HistoryPage";
@@ -7,8 +9,22 @@ import { MemoDetailPage } from "./pages/MemoDetailPage";
 import { MemosPage } from "./pages/MemosPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { useMemoTaskState } from "./state/app-state";
+import { ApiClientProvider } from "./state/api-client-context";
+import { createMemoTaskQueryClient } from "./state/query-client";
 
 export default function App({ client }: { client?: ApiClient }) {
+  const [queryClient] = useState(() => createMemoTaskQueryClient());
+
+  return (
+    <ApiClientProvider client={client ?? apiClient}>
+      <QueryClientProvider client={queryClient}>
+        <MemoTaskApp client={client} />
+      </QueryClientProvider>
+    </ApiClientProvider>
+  );
+}
+
+function MemoTaskApp({ client }: { client?: ApiClient }) {
   const state = useMemoTaskState(client);
 
   if (state.authMode === "checking") {
@@ -55,9 +71,11 @@ export default function App({ client }: { client?: ApiClient }) {
     >
       {state.page === "memos" ? (
         <MemosPage
+          isRefreshing={state.isRefreshingMemos}
           memos={state.memos}
           onMoveMemo={(memoId, direction) => void state.moveMemo(memoId, direction)}
           onOpenMemo={state.openMemoDetail}
+          onRefresh={() => void state.refreshMemos()}
           onReorderMemos={(memoIds) => void state.reorderMemoList(memoIds)}
           onToggleTodo={(todoId) => void state.toggleTodo(todoId)}
         />
@@ -94,6 +112,7 @@ export default function App({ client }: { client?: ApiClient }) {
           recentDrafts={state.recentDrafts}
           onAddTodo={state.addDraftTodo}
           onAnalyze={state.analyzeDraft}
+          onFlushDraft={state.flushDraft}
           onLoadDraft={state.loadRecentDraft}
           onLoadLocalDraft={state.loadLocalDraft}
           onMoveTodo={state.moveDraftTodo}

@@ -5,12 +5,12 @@
 ## 当前版本
 
 ```text
-版本号：v3.0.0
+版本号：v3.1.0
 分支：codex/v3-app-packaging
-标签：v3.0.0（发布时创建）
+标签：v3.1.0（发布时创建）
 ```
 
-v3.0.0 是桌面端与 Android 打包版本。它完整继承 v2 网页端账号和 Memo 能力，并新增 Windows `.exe` 安装包、Android APK、桌面快速记录、Android 分享记录和本地失败草稿保护。
+v3.1.0 是同步与草稿体验增强版本。它继续使用 Electron `.exe` 和 Capacitor APK 作为本地入口，接口仍请求 `https://memotask.rrwks.cn` 上的 Cloudflare Worker，同时用 TanStack React Query 管理前端 server state，改善 PC/Android 同账号同步、登录启动速度和草稿标题流程。
 
 ## 关键版本点
 
@@ -25,7 +25,36 @@ v3.0.0 是桌面端与 Android 打包版本。它完整继承 v2 网页端账号
 | `v2-prompt-sync-2026-06-25` | Git 标签 | 提示词和同步修复稳定点 |
 | `v2.0.0` | Git 标签 | v2 正式发布点 |
 | `codex/v3-app-packaging` | Git 分支 | v3 桌面端与 Android 打包开发分支 |
-| `v3.0.0` | Git 标签 | v3 正式发布点，发布时创建 |
+| `v3.0.0` | Git 标签 | v3 桌面端与 Android 打包正式发布点 |
+| `v3.1.0` | Git 标签 | v3.1 同步与草稿体验正式发布点，发布时创建 |
+
+## v3.1.0 内容摘要
+
+同步与刷新：
+
+- 前端引入 TanStack React Query 统一管理 Memo、详情、草稿、历史、设置和同步状态缓存。
+- 队列页新增“刷新队列”手动刷新入口。
+- 队列页保持打开时以低频轮询刷新；窗口重新聚焦时刷新当前页面数据。
+- 发布 Memo 后立即把服务端返回结果写入队列缓存，不等待后续列表请求。
+- Memo、Todo、排序、归档、恢复、历史删除和设置保存后会更新或失效相关缓存。
+
+登录与启动：
+
+- 登录成功后先进入应用 shell，再后台加载 Memo 列表。
+- 已登录启动时账号检查完成即可进入应用，不再等待队列列表加载完成。
+- 受保护请求失效时仍会清理本地认证状态并回到登录页。
+
+草稿与标题：
+
+- 最近草稿在没有显式标题时优先使用正文作为预览。
+- 标题输入默认隐藏，AI 生成标题或外部分享带标题后再显示并允许编辑。
+- 未填写标题发布时会从正文自动派生标题，不再强制发送“未命名 Memo”。
+- 草稿保存使用最新输入快照，避免较旧的自动保存响应覆盖新的草稿预览。
+
+构建产物：
+
+- Windows 安装包：`release/desktop/MemoTask Setup 3.1.0.exe`
+- Android APK：`android/app/build/outputs/apk/release/app-release.apk`
 
 ## v3.0.0 内容摘要
 
@@ -198,8 +227,10 @@ npm run worker:deploy
 ```bash
 npm test
 npm run build
+npm run e2e
 npm run desktop:build
 npm run android:apk
+npx wrangler deploy --dry-run
 git diff --check
 ```
 
@@ -222,7 +253,7 @@ curl -I https://memotask.rrwks.cn/login
 
 ```bash
 git push -u origin codex/v3-app-packaging
-git push origin v3.0.0
+git push origin v3.1.0
 ```
 
 后续如果要让 GitHub 默认首页直接显示 v3，可以在 GitHub 上创建 Pull Request，或在确认无风险后再合并到 `main`。

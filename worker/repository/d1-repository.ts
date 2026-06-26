@@ -54,7 +54,7 @@ export class D1Repository implements MemoRepository {
     const draft: Memo = {
       id: createId("memo"),
       userId,
-      title: input.title?.trim() || "未命名 Memo",
+      title: input.title?.trim() || "",
       content: input.content,
       status: "draft",
       historyReason: null,
@@ -88,7 +88,7 @@ export class D1Repository implements MemoRepository {
          SET title = ?, content = ?, updated_at = ?
          WHERE id = ? AND user_id = ? AND status = 'draft' AND deleted_at IS NULL`
       )
-      .bind(input.title?.trim() || "未命名 Memo", input.content, now, draftId, userId)
+      .bind(input.title?.trim() || "", input.content, now, draftId, userId)
       .run();
     await this.trimDrafts(userId, 3);
     return this.findMemo(userId, draftId);

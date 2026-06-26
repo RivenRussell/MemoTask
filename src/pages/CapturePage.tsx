@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp, Sparkles, Trash2 } from "lucide-react";
 import { useState } from "react";
-import type { DraftState, LocalCaptureDraft } from "../state/app-state";
+import { deriveMemoTitle, type DraftState, type LocalCaptureDraft } from "../state/app-state";
 import type { Memo } from "../types";
 
 export function CapturePage({
@@ -17,6 +17,7 @@ export function CapturePage({
   onRemoveTodo,
   onMoveTodo,
   onAnalyze,
+  onFlushDraft,
   onPublish
 }: {
   draft: DraftState;
@@ -32,6 +33,7 @@ export function CapturePage({
   onRemoveTodo: (index: number) => void;
   onMoveTodo: (index: number, direction: "up" | "down") => void;
   onAnalyze: () => Promise<void>;
+  onFlushDraft: () => Promise<void>;
   onPublish: () => Promise<void>;
 }) {
   const [newTodo, setNewTodo] = useState("");
@@ -45,16 +47,20 @@ export function CapturePage({
     <div className="capture-layout">
       <section className="soft-card capture-editor paper-editor">
         <img className="capture-glow-asset" src="/assets/ui/top-breathing-glow.png" alt="" aria-hidden="true" />
-        <label className="sr-only" htmlFor="memo-title">
-          Memo 标题
-        </label>
-        <input
-          id="memo-title"
-          className="paper-title-input"
-          placeholder="未命名 Memo"
-          value={draft.title}
-          onChange={(event) => onUpdateDraft({ title: event.target.value })}
-        />
+        {draft.titleVisible ? (
+          <>
+            <label className="sr-only" htmlFor="memo-title">
+              Memo 标题
+            </label>
+            <input
+              id="memo-title"
+              className="paper-title-input"
+              placeholder="AI 整理后的标题"
+              value={draft.title}
+              onChange={(event) => onUpdateDraft({ title: event.target.value, titleVisible: true })}
+            />
+          </>
+        ) : null}
         <label className="sr-only" htmlFor="raw-memo">
           原始 Memo
         </label>
@@ -64,6 +70,7 @@ export function CapturePage({
           placeholder="随时记录..."
           value={draft.content}
           onChange={(event) => onUpdateDraft({ content: event.target.value })}
+          onBlur={() => void onFlushDraft()}
         />
         <div className="capture-footer">
           <div className="capture-status-stack">
@@ -88,18 +95,21 @@ export function CapturePage({
           </div>
           {recentDrafts.length > 0 ? (
             <div className="recent-drafts">
-              {recentDrafts.map((recentDraft) => (
-                <button
-                  className="secondary-action recent-draft-button"
-                  key={recentDraft.id}
-                  type="button"
-                  aria-label={`载入草稿：${recentDraft.title}`}
-                  onClick={() => onLoadDraft(recentDraft.id)}
-                >
-                  <span>{recentDraft.title}</span>
-                  <time dateTime={recentDraft.updatedAt}>{formatDraftTime(recentDraft.updatedAt)}</time>
-                </button>
-              ))}
+              {recentDrafts.map((recentDraft) => {
+                const preview = draftPreviewText(recentDraft);
+                return (
+                  <button
+                    className="secondary-action recent-draft-button"
+                    key={recentDraft.id}
+                    type="button"
+                    aria-label={`载入草稿：${preview}`}
+                    onClick={() => onLoadDraft(recentDraft.id)}
+                  >
+                    <span>{preview}</span>
+                    <time dateTime={recentDraft.updatedAt}>{formatDraftTime(recentDraft.updatedAt)}</time>
+                  </button>
+                );
+              })}
             </div>
           ) : (
             <p className="empty-panel-text">保存过的草稿会出现在这里。</p>
@@ -115,10 +125,10 @@ export function CapturePage({
                     className="secondary-action recent-draft-button"
                     key={localDraft.id}
                     type="button"
-                    aria-label={`载入本地草稿：${localDraft.title}`}
+                    aria-label={`载入本地草稿：${draftPreviewText(localDraft)}`}
                     onClick={() => onLoadLocalDraft(localDraft.id)}
                   >
-                    <span>{localDraft.title}</span>
+                    <span>{draftPreviewText(localDraft)}</span>
                     <time dateTime={localDraft.createdAt}>{formatDraftTime(localDraft.createdAt)}</time>
                   </button>
                 ))}
@@ -180,6 +190,14 @@ export function CapturePage({
       </section>
     </div>
   );
+}
+
+function draftPreviewText(draft: { title: string; content: string }): string {
+  const title = draft.title.trim();
+  if (title && title !== "未命名 Memo") {
+    return title;
+  }
+  return deriveMemoTitle(draft.content);
 }
 
 function formatDraftTime(value: string): string {
