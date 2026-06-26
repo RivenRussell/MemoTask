@@ -1,76 +1,126 @@
 # MemoTask
 
-MemoTask is a Chinese-first, low-pressure Memo queue. It turns rough thoughts into ordered Memo cards, keeps only the next actionable Todo items in view, and archives completed work into searchable history.
+MemoTask 是一个低压力的个人 Memo 待办整理工具。它的核心思路很简单：先把脑子里的想法、计划、链接、琐事写成一条 Memo，再让人工智能把这条 Memo 内部拆成可执行的待办项。用户不需要一开始就想清楚分类、日期和提醒，只需要先记录，再整理。
 
-The current release is V2. It adds application-level account management with email registration, login, email verification, password reset, HttpOnly sessions, and per-user Memo data isolation.
+当前版本为 **v2.0.0**。这个版本新增了完整账号体系，包括注册、登录、邮箱验证码、退出登录、忘记密码、重置密码、会话管理，以及按账号隔离 Memo、草稿、历史记录、人工智能设置和导出数据。
 
-The app is built as a single Cloudflare Worker application: React/Vite serves the UI, Hono handles `/api/*`, and Cloudflare D1 stores accounts, sessions, Memo, Todo, history, undo, sync, and AI settings data.
-
-Production URL for this deployment:
+生产访问地址：
 
 ```text
 https://memotask.rrwks.cn/login
 ```
 
-## Product Design
+## 版本重点
 
-MemoTask deliberately avoids calendar/task-manager complexity. There are no dates, reminders, tags, subscriptions, or independent search pages. The core loop is:
+v2.0.0 相比 v1 的最大变化是从“单用户自用工具”升级为“带账号隔离的多用户应用”。
 
-1. Write a raw Memo on the recording page.
-2. Optionally use AI to split it into Todo drafts.
-3. Publish it into the priority queue.
-4. Work through Todo items in order.
-5. Let completed Memos move into History, or archive them manually.
+主要能力：
 
-The UI uses a Soft Clay / neumorphic visual system with Chinese labels throughout. The queue is intentionally quiet: Memo order is priority, card previews show up to three Todo items, and cards now show how many Todo items remain hidden.
+- 支持邮箱和密码注册账号。
+- 注册后通过邮箱验证码完成验证。
+- 支持登录、退出登录和保持登录状态。
+- 支持忘记密码与邮件重置密码。
+- 使用 HttpOnly 会话 Cookie 保存登录态，降低前端脚本读取登录凭据的风险。
+- 所有 Memo 数据按用户隔离，不同账号互相不可见。
+- 每个用户拥有独立的人工智能接口设置、提示词和加密后的接口密钥。
+- 前端、后端和静态资源统一部署在同一个 Cloudflare Worker。
+- Cloudflare D1 保存账号、会话、Memo、待办、历史记录、草稿、撤销记录和同步状态。
+- Resend 负责发送注册验证和密码重置邮件。
 
-## Main Features
+## 产品理念
 
-- Public email/password account registration, login, logout, email verification, and password reset.
-- HttpOnly session cookies and per-user separation for Memo, draft, history, AI settings, sync status, and JSON export data.
-- Capture page with auto-saved drafts and recent draft recovery.
-- AI analysis using a DeepSeek/OpenAI-compatible chat completions API.
-- Active Memo queue with drag sorting and up/down controls.
-- Memo detail management with editable title, content, Todo text, Todo order, and manual archive.
-- Optimistic UI updates for common operations so slow network requests do not block interaction.
-- Automatic archive when every visible Todo is completed.
-- History page with search, restore, bulk soft-delete, and short-window undo.
-- Settings page for AI base URL, model, API key, prompt template, connection test, and JSON export.
-- Responsive PC and Android layouts verified with Playwright visual QA.
+MemoTask 不想成为一个复杂项目管理系统。它刻意不做日期压力、提醒轰炸、团队权限、订阅付费、看板模板和营销页面。
 
-## Architecture
+它只围绕一个日常闭环：
 
 ```text
-React + Vite
-  |
-  | /api/*
-  v
-Cloudflare Worker (Hono)
-  |
-  v
-Repository interface
-  |-- D1Repository      production Cloudflare D1
-  |-- MemoryRepository  tests and local API tests
-
-Static assets are served by the same Worker through Cloudflare Workers Assets.
+写下 Memo
+-> 可选使用人工智能整理
+-> 编辑待办草稿
+-> 发布到 Memo 队列
+-> 按顺序处理待办
+-> 完成或归档后进入历史记录
 ```
 
-Important paths:
+Memo 是主要容器，Todo 永远属于某条 Memo。Memo 在队列里的前后顺序就是优先级：越靠前越应该先处理，越靠后就暂时放着。这样可以避免“今日任务过期后越积越多”的压力。
+
+## 功能清单
+
+账号功能：
+
+- 邮箱注册。
+- 邮箱验证码验证。
+- 邮箱密码登录。
+- 退出登录。
+- 忘记密码。
+- 密码重置。
+- 登录态检查。
+- 会话过期处理。
+
+Memo 功能：
+
+- 快速记录原始 Memo。
+- 草稿自动保存。
+- 最近草稿恢复。
+- 发布 Memo 到队列。
+- Memo 队列排序。
+- 上移、下移和拖拽排序。
+- Memo 详情编辑。
+- Memo 手动归档。
+- Todo 新增、编辑、删除、勾选和排序。
+- 所有 Todo 完成后自动归档 Memo。
+
+人工智能功能：
+
+- 在设置页配置人工智能接口地址。
+- 配置模型名称。
+- 保存接口密钥。
+- 编辑提示词模板。
+- 恢复默认提示词。
+- 测试接口连接。
+- 从草稿中生成 Memo 标题和 Todo 草稿。
+- 接口密钥保存前会在 Worker 内加密。
+- 前端和导出数据不会返回完整接口密钥。
+
+历史与导出：
+
+- 历史记录列表。
+- 历史记录搜索。
+- 恢复历史 Memo。
+- 批量软删除历史 Memo。
+- 短时间撤销删除。
+- 导出 JSON 数据。
+
+跨端体验：
+
+- 手机端和电脑端共用同一套账号数据。
+- 响应式布局适配安卓手机和桌面浏览器。
+- 生产环境通过 Cloudflare 自定义域名访问。
+
+## 技术架构
+
+MemoTask 是一个单 Worker 应用。React 构建后的静态文件由 Cloudflare Workers Assets 托管，接口请求由同一个 Worker 中的 Hono 路由处理，持久化数据保存在 Cloudflare D1。
 
 ```text
-src/                     React app, pages, state, API client, styles
-worker/                  Hono API, domain logic, repository implementations
-worker/auth/             Account service, password/token crypto, auth persistence, email sender
-migrations/              Cloudflare D1 schema migrations
-tests/api/               Worker/API/repository tests
-tests/ui/                React UI tests
-tests/e2e/               Playwright PC/Android visual and performance checks
-docs/cloudflare-setup.md Detailed Cloudflare setup and deployment guide
+浏览器
+  |
+  | 访问页面和 /api/*
+  v
+Cloudflare Worker
+  |
+  |-- Workers Assets：托管前端构建产物
+  |-- Hono：处理接口路由
+  |-- D1Repository：生产数据库访问
+  |-- AuthRepository：账号、会话和令牌访问
+  |-- EmailSender：通过 Resend 发送邮件
+  |
+  v
+Cloudflare D1
 ```
 
-## Tech Stack
+主要技术：
 
-- React 19
+- React
 - TypeScript
 - Vite
 - Hono
@@ -78,141 +128,70 @@ docs/cloudflare-setup.md Detailed Cloudflare setup and deployment guide
 - Cloudflare Workers Assets
 - Cloudflare D1
 - Wrangler
-- Vitest + Testing Library
+- Vitest
+- Testing Library
 - Playwright
-- `@dnd-kit` for drag sorting
-- `lucide-react` for icons
+- dnd-kit
+- lucide-react
 
-Verified local environment during development:
+## 目录结构
 
 ```text
-Node.js v24.15.0
-npm 11.14.0
-Wrangler 4.103.0
+src/                  前端应用、页面、组件、状态和样式
+worker/               Cloudflare Worker、接口、领域逻辑和仓储实现
+worker/auth/          账号、密码、令牌、会话和邮件发送逻辑
+worker/repository/    D1 与内存仓储实现
+migrations/           Cloudflare D1 数据库迁移
+tests/api/            Worker 接口和仓储测试
+tests/ui/             React 页面与交互测试
+tests/e2e/            Playwright 端到端和视觉检查
+docs/                 核心中文文档
 ```
 
-## Local Development
+## 本地运行
 
-Install dependencies:
+安装依赖：
 
 ```bash
 npm install
 ```
 
-Start the Vite development server:
+启动前端开发服务器：
 
 ```bash
 npm run dev
 ```
 
-The dev server listens on:
+默认访问地址：
 
 ```text
 http://127.0.0.1:5173
 ```
 
-Run the Worker locally with Wrangler:
+启动本地 Worker：
 
 ```bash
 npm run worker:dev
 ```
 
-Apply D1 migrations locally:
+执行本地 D1 迁移：
 
 ```bash
 npm run db:migrate:local
 ```
 
-## Tests
+## 环境变量
 
-Run all unit and integration tests:
+生产环境需要在 Cloudflare Worker 中配置这些密钥或变量：
 
-```bash
-npm test
-```
+| 名称 | 用途 |
+| --- | --- |
+| `APP_ENCRYPTION_KEY` | 用于加密用户保存的人工智能接口密钥 |
+| `EMAIL_API_KEY` | Resend 发信接口密钥 |
+| `EMAIL_FROM` | 发件人，例如 `MemoTask <noreply@notify.example.com>` |
+| `APP_BASE_URL` | 应用公网地址，例如 `https://memotask.example.com` |
 
-Run API tests only:
-
-```bash
-npm run test:api
-```
-
-Run UI tests only:
-
-```bash
-npm run test:ui
-```
-
-Run the production build:
-
-```bash
-npm run build
-```
-
-Run Playwright checks:
-
-```bash
-npm run e2e
-```
-
-The Playwright config uses installed Chrome via the `chrome` channel for both PC and Pixel 7 style Android projects.
-
-## Cloudflare Deployment
-
-This project deploys as one Worker named `memotask`.
-
-Current `wrangler.toml` uses:
-
-```toml
-name = "memotask"
-main = "worker/index.ts"
-compatibility_date = "2026-06-22"
-compatibility_flags = ["nodejs_compat"]
-workers_dev = true
-preview_urls = true
-
-[[routes]]
-pattern = "memotask.rrwks.cn"
-custom_domain = true
-
-[assets]
-directory = "./dist"
-binding = "ASSETS"
-not_found_handling = "single-page-application"
-run_worker_first = ["/api/*"]
-
-[[d1_databases]]
-binding = "DB"
-database_name = "memotask-db"
-database_id = "<your-d1-database-id>"
-```
-
-High-level deployment flow:
-
-```bash
-npm run build
-npm run db:migrate:remote
-npm run worker:deploy
-```
-
-Required Cloudflare resources:
-
-- Cloudflare account with Workers enabled.
-- D1 database named `memotask-db`.
-- Worker secret `APP_ENCRYPTION_KEY`.
-- Worker secret `EMAIL_API_KEY`.
-- Worker variable or secret `EMAIL_FROM`.
-- Worker variable or secret `APP_BASE_URL`.
-- Optional custom domain, for example `memotask.example.com`.
-- Optional Cloudflare Access application if you want an extra Cloudflare-level login gate.
-
-Detailed setup steps are in [docs/cloudflare-setup.md](docs/cloudflare-setup.md).
-
-## Secrets And AI Settings
-
-Do not commit real secrets.
-
-The Worker requires these production secrets or variables:
+配置命令：
 
 ```bash
 npx wrangler secret put APP_ENCRYPTION_KEY
@@ -221,33 +200,141 @@ npx wrangler secret put EMAIL_FROM
 npx wrangler secret put APP_BASE_URL
 ```
 
-MemoTask does not require an AI key in repo files. Configure AI from the app Settings page:
+本地开发可以使用 `.dev.vars`，但不要提交到 Git：
 
 ```text
-Base URL: https://api.deepseek.com
-Model: deepseek-v4-pro
-API key: entered in UI, stored encrypted in D1
+APP_ENCRYPTION_KEY=replace-with-a-long-random-secret
+EMAIL_API_KEY=replace-with-resend-api-key
+EMAIL_FROM=MemoTask <noreply@notify.example.com>
+APP_BASE_URL=http://127.0.0.1:8787
 ```
 
-The Worker encrypts the API key with `APP_ENCRYPTION_KEY` before persistence. Public API responses expose only a masked key value.
+仓库中的 `.env.example` 只保留占位示例，不包含真实密钥。
 
-For local-only secrets, use ignored files such as `.dev.vars` or `.env`.
-See [.env.example](.env.example) for the required key name.
+## 数据库
 
-## API Surface
-
-The Worker handles these API groups:
+D1 迁移文件：
 
 ```text
-GET    /api/health
-POST   /api/auth/register
-POST   /api/auth/login
-POST   /api/auth/logout
-GET    /api/auth/me
-POST   /api/auth/verify-email
-POST   /api/auth/resend-verification
-POST   /api/auth/forgot-password
-POST   /api/auth/reset-password
+migrations/0001_initial.sql
+migrations/0002_auth.sql
+```
+
+主要数据表：
+
+- `users`
+- `sessions`
+- `email_verification_tokens`
+- `password_reset_tokens`
+- `memos`
+- `memo_todos`
+- `ai_settings`
+- `undo_operations`
+- `sync_meta`
+
+远程迁移命令：
+
+```bash
+npm run db:migrate:remote
+```
+
+查看远程表结构：
+
+```bash
+npx wrangler d1 execute memotask-db --remote --command "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;"
+```
+
+## 测试与构建
+
+运行全部测试：
+
+```bash
+npm test
+```
+
+只运行接口测试：
+
+```bash
+npm run test:api
+```
+
+只运行前端测试：
+
+```bash
+npm run test:ui
+```
+
+执行生产构建：
+
+```bash
+npm run build
+```
+
+运行 Playwright 检查：
+
+```bash
+npm run e2e
+```
+
+## 部署流程
+
+部署前先构建：
+
+```bash
+npm run build
+```
+
+执行远程数据库迁移：
+
+```bash
+npm run db:migrate:remote
+```
+
+部署 Worker 和静态资源：
+
+```bash
+npm run worker:deploy
+```
+
+部署后检查：
+
+```bash
+curl https://memotask.rrwks.cn/api/health
+curl -I https://memotask.rrwks.cn/login
+```
+
+期望结果：
+
+```text
+{"ok":true}
+```
+
+Cloudflare 的详细配置见 [Cloudflare 部署指南](docs/cloudflare-setup.md)。
+
+## 主要接口
+
+健康检查：
+
+```text
+GET /api/health
+```
+
+账号接口：
+
+```text
+POST /api/auth/register
+POST /api/auth/login
+POST /api/auth/logout
+GET  /api/auth/me
+POST /api/auth/verify-email
+POST /api/auth/resend-verification
+POST /api/auth/forgot-password
+POST /api/auth/reset-password
+```
+
+Memo 与 Todo 接口：
+
+```text
 POST   /api/drafts
 GET    /api/drafts/recent
 PATCH  /api/drafts/:id
@@ -263,55 +350,84 @@ POST   /api/todos/:id/toggle
 PATCH  /api/todos/:id
 DELETE /api/todos/:id
 POST   /api/todos/reorder
-GET    /api/history
-GET    /api/history/search
-POST   /api/history/bulk-delete
-POST   /api/history/undo-delete
-GET    /api/export/json
-GET    /api/ai/settings
-PUT    /api/ai/settings
-POST   /api/ai/reset-prompt
-POST   /api/ai/test
-POST   /api/ai/analyze-draft
-GET    /api/sync/status
 ```
 
-## Database
+历史、导出和同步接口：
 
-The D1 schema is defined in [migrations/0001_initial.sql](migrations/0001_initial.sql) and [migrations/0002_auth.sql](migrations/0002_auth.sql). It creates:
+```text
+GET  /api/history
+GET  /api/history/search
+POST /api/history/bulk-delete
+POST /api/history/undo-delete
+GET  /api/export/json
+GET  /api/sync/status
+```
 
-- `memos`
-- `memo_todos`
-- `ai_settings`
-- `undo_operations`
-- `sync_meta`
-- `users`
-- `sessions`
-- `email_verification_tokens`
-- `password_reset_tokens`
+人工智能设置接口：
 
-Indexes support active queue sorting, history listing, Todo ordering, user lookup, session lookup, and token lookup.
+```text
+GET  /api/ai/settings
+PUT  /api/ai/settings
+POST /api/ai/reset-prompt
+POST /api/ai/test
+POST /api/ai/analyze-draft
+```
 
-## Security Notes
+## 安全说明
 
-- V2 uses application-level auth by default. Non-auth APIs require a verified session.
-- Cloudflare Access can still be enabled as an additional outer gate, but it is no longer the primary account system.
-- Preview URLs are useful for debugging but should be restricted before external sharing if the data matters.
-- AI API keys should only be entered through Settings or stored as Cloudflare/local secrets.
-- Never commit `.dev.vars`, `.env`, build artifacts, screenshots, or Playwright output.
+- 不要提交 `.dev.vars`、`.env`、真实接口密钥、构建产物和测试输出。
+- 用户密码不会明文保存。
+- 登录会话保存在 D1，并通过 HttpOnly 的 `memotask_session` Cookie 维持登录态。
+- 非账号接口需要有效登录态。
+- 人工智能接口密钥进入 D1 前会用 `APP_ENCRYPTION_KEY` 加密。
+- 导出数据不会包含明文人工智能接口密钥。
+- 邮件验证码和密码重置令牌都有有效期。
+- Cloudflare Access 可以作为额外外层保护，但 v2.0.0 的主要账号边界是应用自己的登录系统。
 
-## Version Management
+## 版本管理
 
-- V1 rollback baseline: branch `codex/memotask-v1`, commit `a6eceb7 chore: establish v1 baseline`.
-- V2 feature branch: `codex/v2-auth`.
-- V2 auth commits are split into design, schema/service, API protection, user isolation, UI flows, production wiring, and release docs.
-- To inspect or recover V1 locally: `git switch codex/memotask-v1`.
-- To continue V2 work: `git switch codex/v2-auth`.
+当前发布版本：
 
-## Documentation
+```text
+v2.0.0
+```
 
-- [Cloudflare setup and deployment](docs/cloudflare-setup.md)
-- [Development context](docs/development-context.md)
-- [V1 implementation task plan](docs/v1-implementation-task-plan.md)
-- [Readable design plan](docs/readable-design-plan.md)
-- [UI mockups](docs/ui-mockups/)
+重要分支和标签：
+
+```text
+codex/memotask-v1       v1 基线分支
+codex/v2-auth           v2 开发和发布分支
+v1                      已存在的 v1 标签
+v2.0.0                  当前 v2 正式标签
+```
+
+查看版本历史：
+
+```bash
+git log --oneline --decorate --graph --all
+```
+
+回到 v1 基线：
+
+```bash
+git switch codex/memotask-v1
+```
+
+回到 v2 当前开发分支：
+
+```bash
+git switch codex/v2-auth
+```
+
+检出 v2.0.0 标签：
+
+```bash
+git switch --detach v2.0.0
+```
+
+更详细的版本和回滚说明见 [版本历史与回滚说明](docs/version-history.md)。
+
+## 核心文档
+
+- [Cloudflare 部署指南](docs/cloudflare-setup.md)
+- [版本历史与回滚说明](docs/version-history.md)

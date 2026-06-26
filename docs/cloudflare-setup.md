@@ -1,113 +1,99 @@
-# Cloudflare Setup And Deployment
+# Cloudflare 部署指南
 
-Updated: 2026-06-23
+本文档记录 MemoTask v2.0.0 在 Cloudflare 上的核心部署方式。它面向后续复现、迁移、回滚和排查问题，不包含真实账号编号、真实密钥或私人控制台链接。
 
-This guide explains how MemoTask is deployed on Cloudflare and how to reproduce the setup in another Cloudflare account.
-
-MemoTask uses one Cloudflare Worker for both the frontend and backend:
-
-- Workers Assets serves the Vite build from `dist/`.
-- The Worker runs first for `/api/*`.
-- Cloudflare D1 stores application data.
-- MemoTask V2 provides application-level accounts with email verification and password reset.
-- A custom domain points directly to the Worker.
-- Cloudflare Access is optional as an extra outer protection layer.
-
-## Billing Safety
-
-Cloudflare changes can create billable resources. Stop and confirm before:
-
-- Buying a domain.
-- Switching to a paid plan.
-- Enabling a paid product.
-- Entering or submitting payment details.
-- Confirming checkout, purchase, or subscription actions.
-
-The current MemoTask deployment uses Workers, D1, Zero Trust Free, and a custom domain already managed in Cloudflare. No paid Cloudflare action is required for normal redeploys.
-
-## Current Production Summary
-
-Current production app URL:
+当前生产地址：
 
 ```text
 https://memotask.rrwks.cn/login
 ```
 
-Current Worker:
+## 部署架构
+
+MemoTask 以单个 Cloudflare Worker 运行：
 
 ```text
-Worker name: memotask
-workers.dev URL: https://memotask.<account-subdomain>.workers.dev
-Custom domain: https://memotask.rrwks.cn
+用户浏览器
+  |
+  | 访问 https://memotask.rrwks.cn
+  v
+Cloudflare Worker：memotask
+  |
+  |-- Workers Assets：返回 React 构建产物
+  |-- Hono：处理 /api/*
+  |-- D1：保存账号、Memo、Todo、历史记录和设置
+  |-- Resend：发送邮箱验证码和密码重置邮件
 ```
 
-Current D1 binding:
+v2.0.0 使用应用自己的账号系统。Cloudflare Access 可以继续作为额外外层保护，但不是必须项。
+
+## 当前资源
+
+生产域名：
 
 ```text
-Binding: DB
-Database name: memotask-db
+memotask.rrwks.cn
 ```
 
-Current AI defaults:
+Worker：
 
 ```text
-Base URL: https://api.deepseek.com
-Model: deepseek-v4-pro
-API key storage: encrypted in D1 after being entered in app Settings
+名称：memotask
+入口：worker/index.ts
+静态资源目录：dist
 ```
 
-Latest verified deployment after the UI polish pass:
+D1：
 
 ```text
-Worker version ID: <masked-worker-version-id>
-Production bundle: /assets/index-C0wqRxWN.js
-Production CSS: /assets/index-C_BKT7Az.css
-Health check: https://memotask.rrwks.cn/api/health -> {"ok":true}
+数据库名称：memotask-db
+绑定名称：DB
 ```
 
-## Required Cloudflare Resources
+邮件：
 
-Create or verify these resources:
+```text
+服务商：Resend
+发信域名：notify.rrwks.cn
+```
 
-1. Cloudflare Workers application named `memotask`.
-2. Cloudflare D1 database named `memotask-db`.
-3. D1 binding named `DB`.
-4. Worker secret named `APP_ENCRYPTION_KEY`.
-5. Worker secret named `EMAIL_API_KEY`.
-6. Worker variable or secret named `EMAIL_FROM`.
-7. Worker variable or secret named `APP_BASE_URL`.
-8. Optional custom domain, such as `memotask.example.com`.
-9. Optional Cloudflare Access application if an extra Cloudflare-level gate is needed.
+## 费用提醒
 
-## Local Prerequisites
+以下操作可能产生费用，执行前需要单独确认：
 
-Install dependencies:
+- 购买域名。
+- 升级 Cloudflare 付费套餐。
+- 开通付费产品。
+- 填写付款信息。
+- 确认结账、购买或订阅。
+
+日常重新部署 Worker、执行 D1 迁移、修改 Worker Secrets，一般不需要购买新资源。
+
+## 本地准备
+
+安装依赖：
 
 ```bash
 npm install
 ```
 
-Log in to Cloudflare:
+登录 Cloudflare：
 
 ```bash
 npx wrangler login
 ```
 
-Verify Wrangler:
+查看 Wrangler 版本：
 
 ```bash
 npx wrangler --version
 ```
 
-The version used during this deployment was:
+本项目开发和部署时使用过的 Wrangler 版本为 4.x。
 
-```text
-4.103.0
-```
+## Wrangler 配置
 
-## Worker And Assets Configuration
-
-`wrangler.toml` should use this shape:
+`wrangler.toml` 的核心配置如下：
 
 ```toml
 name = "memotask"
@@ -118,86 +104,71 @@ workers_dev = true
 preview_urls = true
 
 [[routes]]
-pattern = "memotask.example.com"
+pattern = "memotask.rrwks.cn"
 custom_domain = true
 
 [assets]
 directory = "./dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/api/*"]
+run_worker_first = true
 
 [[d1_databases]]
 binding = "DB"
 database_name = "memotask-db"
-database_id = "<your-d1-database-id>"
+database_id = "<Cloudflare D1 数据库编号>"
 ```
 
-For this project, the custom domain is:
+说明：
 
-```toml
-[[routes]]
-pattern = "memotask.rrwks.cn"
-custom_domain = true
-```
+- `not_found_handling = "single-page-application"` 用于支持 `/login`、`/signup`、`/memos`、`/history` 等前端路由刷新。
+- `run_worker_first = true` 让 Worker 先接管请求，再决定返回接口响应或静态资源。
+- `custom_domain = true` 表示该 Worker 直接绑定自定义域名。
+- `database_id` 是 Cloudflare D1 生成的数据库编号，不是密钥，但公开仓库中仍建议按需脱敏。
 
-Important details:
+## D1 数据库
 
-- `not_found_handling = "single-page-application"` allows direct routes such as `/login`, `/signup`, `/verify-email`, `/memos`, `/history`, and `/settings` to load the React app.
-- `run_worker_first = ["/api/*"]` ensures API requests go to Hono instead of static assets.
-- `workers_dev = true` keeps the fallback `workers.dev` URL enabled.
-- `preview_urls = true` allows preview deployments. Restrict this later if preview data should not be public.
-
-## D1 Database Setup
-
-Create the D1 database:
+创建数据库：
 
 ```bash
 npx wrangler d1 create memotask-db
 ```
 
-Wrangler returns a `database_id`. Copy it into `wrangler.toml`:
+创建后将返回的数据库编号写入 `wrangler.toml`：
 
 ```toml
 [[d1_databases]]
 binding = "DB"
 database_name = "memotask-db"
-database_id = "<your-d1-database-id>"
+database_id = "<Cloudflare D1 数据库编号>"
 ```
 
-Apply the migration locally:
+本地执行迁移：
 
 ```bash
 npm run db:migrate:local
 ```
 
-Apply the migration remotely:
+远程执行迁移：
 
 ```bash
 npm run db:migrate:remote
 ```
 
-The schema is split across [migrations/0001_initial.sql](../migrations/0001_initial.sql) and [migrations/0002_auth.sql](../migrations/0002_auth.sql). It creates:
+当前迁移文件：
 
 ```text
-memos
-memo_todos
-ai_settings
-undo_operations
-sync_meta
-users
-sessions
-email_verification_tokens
-password_reset_tokens
+migrations/0001_initial.sql
+migrations/0002_auth.sql
 ```
 
-Useful verification command:
+验证远程表：
 
 ```bash
 npx wrangler d1 execute memotask-db --remote --command "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;"
 ```
 
-Expected application tables include:
+应能看到这些核心表：
 
 ```text
 ai_settings
@@ -211,327 +182,260 @@ undo_operations
 users
 ```
 
-## Worker Secrets
+## Worker 密钥和变量
 
-Set `APP_ENCRYPTION_KEY` before using AI settings in production:
+生产环境必须配置：
+
+| 名称 | 建议类型 | 用途 |
+| --- | --- | --- |
+| `APP_ENCRYPTION_KEY` | Secret | 加密用户保存的人工智能接口密钥 |
+| `EMAIL_API_KEY` | Secret | Resend 发信接口密钥 |
+| `EMAIL_FROM` | Secret 或变量 | 发件人地址 |
+| `APP_BASE_URL` | Secret 或变量 | 应用公网地址 |
+
+配置命令：
 
 ```bash
 npx wrangler secret put APP_ENCRYPTION_KEY
-```
-
-Use a long random value. Do not commit it.
-
-This secret is used to encrypt API keys entered through the app Settings page before they are stored in D1.
-
-Set email delivery configuration before opening registration or password reset in production:
-
-```bash
 npx wrangler secret put EMAIL_API_KEY
 npx wrangler secret put EMAIL_FROM
 npx wrangler secret put APP_BASE_URL
 ```
 
-V2 sends verification and password-reset emails through a Resend-compatible HTTP API. Use values like:
+示例值：
 
 ```text
-EMAIL_FROM=MemoTask <noreply@example.com>
+APP_ENCRYPTION_KEY=<一段足够长的随机字符串>
+EMAIL_API_KEY=<Resend API Key>
+EMAIL_FROM=MemoTask <noreply@notify.example.com>
 APP_BASE_URL=https://memotask.example.com
 ```
 
-If email configuration is missing, registration and password recovery fail clearly instead of pretending an email was sent.
+不要把真实值写入 README、提交记录、截图、问题单或公开聊天。
 
-For local Worker development, use `.dev.vars` and keep it ignored by Git:
+## Resend 邮件配置
 
-```text
-APP_ENCRYPTION_KEY=<local-random-secret>
-EMAIL_API_KEY=<local-email-provider-key>
-EMAIL_FROM=MemoTask <noreply@example.com>
-APP_BASE_URL=http://127.0.0.1:8787
-```
+MemoTask v2.0.0 需要邮件能力完成注册验证和密码找回。当前建议使用 Resend。
 
-The repository includes [.env.example](../.env.example) with the required key name.
+配置步骤：
 
-## AI Configuration
+1. 登录 Resend。
+2. 新建或选择发信域名，例如 `notify.rrwks.cn`。
+3. Resend 会给出若干 DNS 记录，通常包括 SPF、DKIM 和可能的验证记录。
+4. 打开 Cloudflare DNS。
+5. 在 `rrwks.cn` 这个区域下添加 Resend 要求的记录。
+6. 等待 Resend 显示域名验证通过。
+7. 在 Resend 创建 API Key，权限选择发送邮件所需的最小权限。
+8. 将 API Key 写入 `EMAIL_API_KEY`。
+9. 将发件人写入 `EMAIL_FROM`。
 
-MemoTask stores AI settings through the application UI, not through committed config files.
-
-Open:
-
-```text
-https://memotask.rrwks.cn/settings
-```
-
-Use:
+如果使用当前域名，建议值类似：
 
 ```text
-Base URL: https://api.deepseek.com
-Model: deepseek-v4-pro
-API key: your DeepSeek-compatible API key
+EMAIL_FROM=MemoTask <noreply@notify.rrwks.cn>
+APP_BASE_URL=https://memotask.rrwks.cn
 ```
 
-Click the connection test button. A successful production test returns:
+注意：
 
-```text
-POST /api/ai/test -> {"ok":true}
-```
+- `notify.rrwks.cn` 是发信域名，不是应用访问域名。
+- `memotask.rrwks.cn` 是应用访问域名。
+- 两者可以同时存在于 Cloudflare DNS 中。
+- Cloudflare 邮件路由不是必须项；MemoTask 是通过 Resend 主动发信，不依赖 Cloudflare 收信转发。
 
-Security behavior:
+## 自定义域名
 
-- The full API key is never returned by the API.
-- The key is encrypted before D1 persistence.
-- The Settings API returns only a masked key, for example `sk-...last4`.
-
-## Build And Deploy
-
-Build the frontend:
-
-```bash
-npm run build
-```
-
-Deploy the Worker and assets:
-
-```bash
-npm run worker:deploy
-```
-
-The deployment uploads:
-
-- `dist/index.html`
-- `dist/assets/*.js`
-- `dist/assets/*.css`
-- Worker code from `worker/index.ts`
-
-Recent successful deployment output included:
-
-```text
-Uploaded memotask
-Deployed memotask triggers
-  https://memotask.<account-subdomain>.workers.dev
-  memotask.rrwks.cn (custom domain)
-Current Version ID: <masked-worker-version-id>
-```
-
-## Custom Domain Setup
-
-The current domain is:
-
-```text
-rrwks.cn
-```
-
-The configured app hostname is:
+当前应用域名是：
 
 ```text
 memotask.rrwks.cn
 ```
 
-DNS hostnames are case-insensitive, so `MemoTask.rrwks.cn` and `memotask.rrwks.cn` resolve to the same host. The canonical lowercase form is used in config.
+前提：
 
-To configure a custom domain:
+- `rrwks.cn` 的权威 DNS 已经托管到 Cloudflare。
+- Cloudflare 中存在 `rrwks.cn` 这个区域。
+- Worker 路由配置中包含 `memotask.rrwks.cn`。
 
-1. Add the domain to Cloudflare DNS or transfer/manage the domain in Cloudflare.
-2. Ensure the zone is active.
-3. Add the Worker custom domain route in `wrangler.toml`.
-4. Deploy with `npm run worker:deploy`.
-5. Verify HTTPS and API responses.
+部署后 Cloudflare 会把该主机名绑定到 Worker。通常不需要手动添加一条普通的 A 记录指向服务器，因为 Worker 自定义域名由 Cloudflare 内部路由接管。
 
-Verification commands:
+检查命令：
 
 ```bash
 curl -I https://memotask.rrwks.cn/login
 curl https://memotask.rrwks.cn/api/health
 ```
 
-Expected:
+期望：
 
 ```text
-HTTP/1.1 200 OK
+HTTP/2 200
 {"ok":true}
 ```
 
-You can also confirm that production HTML references the latest bundle:
-
-```bash
-curl -s https://memotask.rrwks.cn/login
-```
-
-Look for the current `/assets/index-*.js` and `/assets/index-*.css` files.
-
-## Application Auth And Cloudflare Access
-
-MemoTask V2 includes its own application-level account system. Users register with email/password, verify email, log in, log out, and reset passwords by email token. The Worker stores sessions in D1 and sets an HttpOnly `memotask_session` cookie.
-
-Cloudflare Access is still optional as an outer gate.
-
-Two workable modes:
-
-1. Public Worker URL and public custom domain, protected by MemoTask V2 auth.
-2. Cloudflare Access protected app plus MemoTask V2 auth for an additional Cloudflare login step.
-
-The current production custom domain is public for easier cross-device testing. An Access application and owner-only policy were configured earlier for the `workers.dev` URL, but enforcement was later disabled while testing mobile access.
-
-Recommended V2 decision:
-
-- Keep public only while testing if preview data is not sensitive.
-- Before sharing widely, confirm email delivery works and decide whether Cloudflare Access is also needed.
-- If using Access, configure a policy such as `Include -> Emails -> your-email@example.com`.
-
-Basic Access setup:
-
-1. Open Cloudflare Dashboard.
-2. Go to Zero Trust.
-3. Confirm the Free plan is active.
-4. Go to Access -> Applications.
-5. Add an application for the Worker/custom domain hostname.
-6. Add an Allow policy.
-7. Include the owner email or a reusable rule group.
-8. Test in a private browser window.
-
-Expected restricted behavior:
+如果 HTTP 被跳转到 HTTPS，也属于正常行为：
 
 ```text
-Unauthenticated request -> 302 redirect to <team-name>.cloudflareaccess.com
-Authenticated owner email -> MemoTask loads normally
+HTTP/1.1 308 Permanent Redirect
 ```
 
-If phone browsers fail to open the app after Access is enabled, first check whether the phone browser can complete Cloudflare Access one-time PIN login.
+## 构建与部署
 
-## Verification Checklist
+构建前端：
 
-Run these before saying a deployment is ready:
+```bash
+npm run build
+```
+
+部署 Worker 和静态资源：
+
+```bash
+npm run worker:deploy
+```
+
+推荐完整发布顺序：
 
 ```bash
 npm test
 npm run build
-npx playwright test tests/e2e/visual-qa.spec.ts --project=android
-npx playwright test tests/e2e/visual-qa.spec.ts --project=pc
+npm run db:migrate:remote
+npm run worker:deploy
 curl https://memotask.rrwks.cn/api/health
 curl -I https://memotask.rrwks.cn/login
 ```
 
-Latest verified local checks after UI polish:
+## 部署后检查
 
-```text
-npm test -> 13 files, 57 tests passed
-npm run build -> passed
-Android visual QA -> 6 passed
-PC visual QA -> 5 passed, 1 Android-only check skipped
+基础检查：
+
+- `/api/health` 返回 `{"ok":true}`。
+- `/login` 能打开登录页面。
+- `/signup` 能打开注册页面。
+- 未登录访问 `/api/memos` 返回未授权错误。
+- 注册后能收到邮箱验证码。
+- 验证邮箱后能登录。
+- 登录后创建的 Memo 只在当前账号可见。
+- 另一个账号登录后看不到前一个账号的数据。
+- 忘记密码邮件能收到。
+- 重置密码后旧密码不可用，新密码可登录。
+
+命令示例：
+
+```bash
+curl https://memotask.rrwks.cn/api/health
+curl -I https://memotask.rrwks.cn/login
 ```
 
-Latest production checks:
+## 常见问题
 
-```text
-GET https://memotask.rrwks.cn/api/health -> {"ok":true}
-GET https://memotask.rrwks.cn/login -> 200 OK
-Production HTML references /assets/index-C0wqRxWN.js and /assets/index-C_BKT7Az.css
-Android Chrome screenshot loaded the Chinese MemoTask login UI
-```
+### 页面刷新后 404
 
-## Troubleshooting
-
-### `/api/*` returns HTML
-
-Check `wrangler.toml`:
-
-```toml
-run_worker_first = ["/api/*"]
-```
-
-Without this, asset routing can intercept API requests.
-
-### Direct route refresh returns 404
-
-Check:
+检查 `wrangler.toml`：
 
 ```toml
 not_found_handling = "single-page-application"
 ```
 
-This lets `/login`, `/signup`, `/verify-email`, `/memos`, `/history`, and `/settings` resolve to the React app.
+这个配置让前端路由刷新时仍返回 React 应用入口。
 
-### AI settings fail to save
+### 接口返回的是 HTML
 
-Confirm `APP_ENCRYPTION_KEY` is set:
+检查 Worker 是否先处理接口请求。当前配置使用：
+
+```toml
+run_worker_first = true
+```
+
+### 保存人工智能设置失败
+
+检查是否已经配置：
 
 ```bash
 npx wrangler secret put APP_ENCRYPTION_KEY
 ```
 
-Then redeploy:
+然后重新部署：
 
 ```bash
 npm run worker:deploy
 ```
 
-### AI test fails
+### 注册或找回密码邮件发送失败
 
-Check:
+检查：
 
-- Base URL has no typo.
-- Model ID is supported by the provider.
-- API key is active.
-- Provider supports an OpenAI-compatible `/chat/completions` endpoint.
+- `EMAIL_API_KEY` 是否正确。
+- `EMAIL_FROM` 是否使用已经在 Resend 验证通过的发信域名。
+- `APP_BASE_URL` 是否是生产访问地址。
+- Resend 域名验证是否已经通过。
+- Cloudflare DNS 中 Resend 要求的记录是否完整。
 
-Current known-good DeepSeek values:
-
-```text
-Base URL: https://api.deepseek.com
-Model: deepseek-v4-pro
-```
-
-### Registration or password reset email fails
-
-Confirm email settings are present:
+重新写入密钥后部署：
 
 ```bash
 npx wrangler secret put EMAIL_API_KEY
 npx wrangler secret put EMAIL_FROM
 npx wrangler secret put APP_BASE_URL
-```
-
-Then redeploy:
-
-```bash
 npm run worker:deploy
 ```
 
-### D1 binding missing at runtime
+### D1 绑定缺失
 
-Check:
+检查 `wrangler.toml`：
 
 ```toml
 [[d1_databases]]
 binding = "DB"
 database_name = "memotask-db"
-database_id = "<your-d1-database-id>"
+database_id = "<Cloudflare D1 数据库编号>"
 ```
 
-The Worker expects `env.DB`.
+Worker 代码期望通过 `env.DB` 访问数据库。
 
-### Custom domain does not load
+### 自定义域名无法访问
 
-Check:
+按顺序检查：
 
-1. The domain is active in Cloudflare.
-2. The Worker route uses the exact hostname.
-3. The latest deployment completed successfully.
-4. `curl -I https://<hostname>/login` returns `200 OK`.
-5. DNS resolves to Cloudflare.
+1. `rrwks.cn` 是否已经使用 Cloudflare 的 NS。
+2. Cloudflare 区域是否处于启用状态。
+3. `wrangler.toml` 中的路由是否是 `memotask.rrwks.cn`。
+4. 最近一次 `npm run worker:deploy` 是否成功。
+5. HTTPS 是否已经签发证书。
+6. `curl -I https://memotask.rrwks.cn/login` 是否返回 200 或跳转。
 
-### Cloudflare Access blocks mobile access
+### Cloudflare Access 和应用登录的关系
 
-For V2 testing, set the Worker/custom domain access mode to Public and rely on MemoTask login. For long-term use, decide between:
+MemoTask v2.0.0 已经有应用级账号系统。Cloudflare Access 可以选用：
 
-- Cloudflare Access with email one-time PIN or identity provider login.
-- MemoTask app-level authentication only.
+- 如果只想依赖 MemoTask 自己的注册和登录，保持 Worker 自定义域名公开即可。
+- 如果想在外面再加一道门，可以给 `memotask.rrwks.cn` 配置 Cloudflare Access。
+- 开启 Access 后，用户需要先通过 Cloudflare，再进入 MemoTask 登录页。
 
-## Public Sharing Before GitHub Upload
+移动端测试时，如果 Cloudflare Access 登录不方便，可以临时关闭 Access，仅依赖 MemoTask 应用登录。
 
-Before pushing to GitHub:
+## GitHub 发布前检查
 
-1. Do not commit `.dev.vars`, `.env`, `dist/`, `.wrangler/`, `output/`, `test-results/`, or Playwright reports.
-2. Search docs and code for real API keys.
-3. Keep only masked key examples in docs.
-4. Decide whether `memotask.rrwks.cn` should stay public.
-5. If the repo is public, avoid committing personal Cloudflare dashboard URLs, account IDs, policy IDs, or private screenshots.
+提交和推送前执行：
+
+```bash
+npm test
+npm run build
+git diff --check
+```
+
+检查密钥：
+
+```bash
+rg -n -P "re_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|Bearer (?!test-|example-|placeholder)[A-Za-z0-9_.-]{20,}" . -g "!node_modules/**" -g "!dist/**" -g "!.wrangler/**" -g "!output/**" -g "!test-results/**" -g "!playwright-report/**"
+```
+
+确认不要提交：
+
+- `.dev.vars`
+- `.env`
+- `dist/`
+- `.wrangler/`
+- `test-results/`
+- `playwright-report/`
+- 真实 Resend API Key
+- 真实人工智能接口密钥
