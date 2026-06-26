@@ -602,7 +602,7 @@ img {
 
 .paper-body-input {
   min-height: 320px;
-  padding: 8px 0 96px;
+  padding: 8px 0 24px;
   color: var(--text);
   font-size: 16px;
   line-height: 1.78;
@@ -616,57 +616,64 @@ textarea::placeholder {
   color: var(--text-muted);
 }
 
-.ai-floating-action {
-  position: absolute;
-  right: 28px;
-  bottom: 76px;
-  z-index: 2;
-  min-height: 52px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 16px 0 8px;
-  border: 0;
-  border-radius: 16px;
-  color: var(--text-strong);
-  background: linear-gradient(135deg, #eef2ff 0%, #ffffff 100%);
-  box-shadow: var(--shadow-button);
-  font-size: 14px;
-  font-weight: 760;
-  transition:
-    transform 180ms ease,
-    box-shadow 180ms ease;
-}
-
-.ai-floating-action:hover,
-.ai-floating-action:focus-visible {
-  transform: translateY(-1px);
-  box-shadow: 7px 7px 18px rgba(148, 163, 184, 0.16), -6px -6px 16px rgba(255, 255, 255, 0.94);
-  outline: none;
-}
-
-.ai-floating-action img {
-  width: 42px;
-  height: 42px;
-  object-fit: contain;
-  margin-left: -2px;
-}
-
 .capture-footer {
   position: relative;
   z-index: 1;
-  min-height: 46px;
+  min-height: 54px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding-top: 12px;
+  gap: 16px;
+  padding-top: 14px;
+}
+
+.capture-status-stack {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.capture-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.capture-actions .primary-action,
+.capture-actions .secondary-action {
+  min-width: 128px;
+}
+
+.capture-actions .ai-action {
+  color: var(--text-strong);
+  background: linear-gradient(135deg, rgba(238, 242, 255, 0.96), rgba(255, 255, 255, 0.88));
 }
 
 .draft-list-panel {
   display: grid;
-  gap: 18px;
+  gap: 22px;
   padding: 22px;
+}
+
+.recent-drafts-panel,
+.draft-todo-panel {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.draft-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.draft-panel-heading h2 {
+  font-size: 18px;
 }
 
 .todo-draft-row {
@@ -703,16 +710,11 @@ textarea::placeholder {
   transform: translateX(0);
 }
 
-.draft-empty-state {
-  min-height: 240px;
-  display: grid;
-  place-items: center;
-}
-
-.draft-empty-state img {
-  width: min(86%, 260px);
-  opacity: 0.9;
-  filter: drop-shadow(0 18px 34px rgba(148, 163, 184, 0.13));
+.empty-panel-text {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 label {
@@ -892,17 +894,37 @@ textarea {
 .recent-drafts {
   position: relative;
   z-index: 1;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   gap: 8px;
-  padding-top: 8px;
 }
 
-.recent-drafts .secondary-action {
-  min-height: 36px;
+.recent-drafts .recent-draft-button {
+  width: 100%;
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  justify-content: stretch;
+  gap: 10px;
   border-radius: 12px;
-  color: var(--text-muted);
+  padding: 0 12px;
+  color: var(--text);
   font-size: 12px;
+  text-align: left;
+}
+
+.recent-drafts .recent-draft-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 760;
+}
+
+.recent-drafts .recent-draft-button time {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
 }
 
 .memo-detail-layout {
@@ -975,9 +997,7 @@ textarea {
   position: fixed;
   z-index: 0;
   pointer-events: none;
-  object-fit: contain;
-  mix-blend-mode: multiply;
-  opacity: 0.48;
+  opacity: 0.55;
 }
 
 .auth-background-corner {
@@ -985,6 +1005,13 @@ textarea {
   bottom: -170px;
   width: min(44vw, 560px);
   height: min(44vw, 560px);
+  border-radius: 48% 52% 54% 46%;
+  background:
+    radial-gradient(circle at 24% 34%, rgba(255, 255, 255, 0.9), transparent 24%),
+    radial-gradient(circle at 68% 32%, rgba(186, 230, 253, 0.28), transparent 28%),
+    radial-gradient(circle at 50% 66%, rgba(167, 243, 208, 0.22), transparent 34%),
+    rgba(255, 255, 255, 0.28);
+  filter: blur(1px);
 }
 
 .auth-background-glow {
@@ -992,6 +1019,11 @@ textarea {
   top: -120px;
   width: min(50vw, 720px);
   height: min(26vw, 360px);
+  border-radius: 999px;
+  background:
+    radial-gradient(ellipse at 40% 52%, rgba(129, 140, 248, 0.12), transparent 42%),
+    radial-gradient(ellipse at 65% 46%, rgba(186, 230, 253, 0.2), transparent 54%);
+  filter: blur(8px);
   transform: rotate(-7deg);
 }
 
@@ -1045,7 +1077,36 @@ textarea {
   position: relative;
   z-index: 1;
   width: min(68%, 250px);
-  filter: drop-shadow(0 28px 46px rgba(129, 140, 248, 0.16));
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 48% 45%, rgba(255, 255, 255, 0.96) 0 8%, transparent 9%),
+    radial-gradient(circle at 48% 50%, rgba(125, 211, 252, 0.72), transparent 30%),
+    radial-gradient(circle at 60% 36%, rgba(196, 181, 253, 0.7), transparent 28%),
+    radial-gradient(circle at 36% 66%, rgba(167, 243, 208, 0.62), transparent 30%),
+    rgba(255, 255, 255, 0.72);
+  box-shadow:
+    inset 0 0 28px rgba(255, 255, 255, 0.9),
+    inset 8px 8px 28px rgba(129, 140, 248, 0.12),
+    0 28px 46px rgba(129, 140, 248, 0.16);
+}
+
+.auth-orb-asset::before,
+.auth-orb-asset::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 72%;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  transform: translate(-50%, -50%) rotate(28deg);
+}
+
+.auth-orb-asset::after {
+  width: 58%;
+  transform: translate(-50%, -50%) rotate(-42deg);
 }
 
 .auth-floating-icons {
@@ -1280,12 +1341,24 @@ textarea {
 
   .paper-body-input {
     min-height: 260px;
-    padding-bottom: 100px;
+    padding-bottom: 24px;
   }
 
-  .ai-floating-action {
-    right: 20px;
-    bottom: 72px;
+  .capture-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .capture-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .capture-actions .primary-action,
+  .capture-actions .secondary-action {
+    min-width: 0;
+    width: 100%;
   }
 
   .draft-list-panel {
@@ -1490,26 +1563,5 @@ textarea {
 
   .paper-body-input {
     min-height: 300px;
-  }
-
-  .ai-floating-action span {
-    display: none;
-  }
-
-  .ai-floating-action {
-    width: 56px;
-    min-height: 56px;
-    justify-content: center;
-    padding: 0;
-  }
-
-  .ai-floating-action img {
-    width: 46px;
-    height: 46px;
-    margin: 0;
-  }
-
-  .ai-floating-action svg {
-    display: none;
   }
 }

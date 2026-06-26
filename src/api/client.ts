@@ -7,6 +7,17 @@ interface ApiErrorBody {
   };
 }
 
+export class ApiRequestError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly status: number
+  ) {
+    super(message);
+    this.name = "ApiRequestError";
+  }
+}
+
 interface AiSettingsInput {
   baseUrl: string;
   model: string;
@@ -273,11 +284,11 @@ export class ApiClient {
   }
 
   private async request<T>(url: string, init?: RequestInit): Promise<T> {
-    const response = init ? await this.fetcher(url, init) : await this.fetcher(url);
+    const response = await this.fetcher(url, { ...init, credentials: "include" });
     const body = (await response.json().catch(() => ({}))) as T & ApiErrorBody;
 
     if (!response.ok) {
-      throw new Error(body.error?.message ?? "请求失败，请稍后重试");
+      throw new ApiRequestError(body.error?.code ?? "REQUEST_FAILED", body.error?.message ?? "请求失败，请稍后重试", response.status);
     }
 
     return body;

@@ -15,6 +15,16 @@ export interface Env {
 
 export default {
   fetch(request: Request, env: Env, executionContext: ExecutionContext) {
+    const httpsRedirect = redirectPlaintextProductionRequest(request);
+    if (httpsRedirect) {
+      return httpsRedirect;
+    }
+
+    const url = new URL(request.url);
+    if (!url.pathname.startsWith("/api/")) {
+      return env.ASSETS.fetch(request);
+    }
+
     const app = createApi({
       repository: new D1Repository(env.DB),
       authService: new AuthService({
@@ -27,3 +37,19 @@ export default {
     return app.fetch(request, env, executionContext);
   }
 };
+
+function redirectPlaintextProductionRequest(request: Request): Response | null {
+  const url = new URL(request.url);
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  const isPlaintext = url.protocol === "http:" || forwardedProto === "http";
+  if (!isPlaintext || isLocalHost(url.hostname)) {
+    return null;
+  }
+
+  url.protocol = "https:";
+  return Response.redirect(url.toString(), 308);
+}
+
+function isLocalHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0" || hostname === "[::1]";
+}

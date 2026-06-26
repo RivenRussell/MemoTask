@@ -5,6 +5,20 @@ import App from "../../src/App";
 import { createUiTestClient, findPrimaryNav } from "./test-client";
 
 describe("MemoTask capture draft and AI workflow", () => {
+  it("shows recent drafts as a vertical side list without the old cloud illustration", async () => {
+    render(<App client={createUiTestClient()} />);
+    const primaryNav = await findPrimaryNav();
+
+    await userEvent.click(within(primaryNav).getByRole("button", { name: "记录" }));
+    await userEvent.type(screen.getByLabelText("原始 Memo"), "第一条最近草稿");
+    expect(await screen.findByText("草稿已保存", undefined, { timeout: 3_000 })).toBeInTheDocument();
+
+    expect(screen.getByLabelText("最近草稿列表")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "载入草稿：未命名 Memo" })).toBeInTheDocument();
+    expect(document.querySelector(".draft-empty-state")).not.toBeInTheDocument();
+    expect(document.querySelector('img[src="/assets/ui/empty-memos-cloud.png"]')).not.toBeInTheDocument();
+  });
+
   it("auto saves a draft, reloads it from recent drafts, and applies Analyze results before publishing", async () => {
     render(
       <App

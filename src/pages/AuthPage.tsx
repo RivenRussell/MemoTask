@@ -226,8 +226,8 @@ export function AuthPage({
 function AuthFrame({ title, children }: { title: string; children: ReactNode }) {
   return (
     <main className="auth-shell">
-      <img className="auth-background-asset auth-background-corner" src="/assets/ui/corner-fluid-shapes.png" alt="" aria-hidden="true" />
-      <img className="auth-background-asset auth-background-glow" src="/assets/ui/top-breathing-glow.png" alt="" aria-hidden="true" />
+      <div className="auth-background-asset auth-background-corner" aria-hidden="true" />
+      <div className="auth-background-asset auth-background-glow" aria-hidden="true" />
       <section className="auth-layout" aria-label="MemoTask 账号">
         <aside className="auth-visual-panel" aria-hidden="true">
           <div className="brand-mark auth-brand-mark">
@@ -237,7 +237,7 @@ function AuthFrame({ title, children }: { title: string; children: ReactNode }) 
             </div>
           </div>
           <div className="auth-orb-stage">
-            <img className="auth-orb-asset" src="/assets/ui/ai-magic-orb.png" alt="" aria-hidden="true" />
+            <div className="auth-orb-asset" aria-hidden="true" />
             <div className="auth-floating-icons">
               <span>
                 <Mail size={18} />

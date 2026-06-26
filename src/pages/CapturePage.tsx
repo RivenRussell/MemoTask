@@ -61,35 +61,50 @@ export function CapturePage({
           value={draft.content}
           onChange={(event) => onUpdateDraft({ content: event.target.value })}
         />
-        <button className="ai-floating-action" type="button" onClick={() => void onAnalyze()}>
-          <img src="/assets/ui/ai-magic-orb.png" alt="" aria-hidden="true" />
-          <span>{isAnalyzing ? "整理中" : "整理"}</span>
-          <Sparkles size={15} aria-hidden="true" />
-        </button>
         <div className="capture-footer">
-          {message ? <p className="status-message">{message}</p> : <span aria-hidden="true" />}
-          {error ? <p className="status-message status-message-error">{error}</p> : null}
-          <button className="secondary-action" type="button" onClick={() => void onPublish()}>
-            发布
-          </button>
-        </div>
-        {recentDrafts.length > 0 ? (
-          <div className="recent-drafts">
-            {recentDrafts.map((recentDraft) => (
-              <button
-                className="secondary-action"
-                key={recentDraft.id}
-                type="button"
-                aria-label={`载入草稿：${recentDraft.title}`}
-                onClick={() => onLoadDraft(recentDraft.id)}
-              >
-                {recentDraft.title}
-              </button>
-            ))}
+          <div className="capture-status-stack">
+            {message ? <p className="status-message">{message}</p> : <span aria-hidden="true" />}
+            {error ? <p className="status-message status-message-error">{error}</p> : null}
           </div>
-        ) : null}
+          <div className="capture-actions">
+            <button className="secondary-action ai-action" type="button" onClick={() => void onAnalyze()}>
+              <span>{isAnalyzing ? "整理中" : "整理"}</span>
+              <Sparkles size={15} aria-hidden="true" />
+            </button>
+            <button className="primary-action" type="button" onClick={() => void onPublish()}>
+              发布
+            </button>
+          </div>
+        </div>
       </section>
       <section className="soft-card draft-card draft-list-panel">
+        <section className="recent-drafts-panel" aria-label="最近草稿列表">
+          <div className="draft-panel-heading">
+            <h2>最近草稿</h2>
+          </div>
+          {recentDrafts.length > 0 ? (
+            <div className="recent-drafts">
+              {recentDrafts.map((recentDraft) => (
+                <button
+                  className="secondary-action recent-draft-button"
+                  key={recentDraft.id}
+                  type="button"
+                  aria-label={`载入草稿：${recentDraft.title}`}
+                  onClick={() => onLoadDraft(recentDraft.id)}
+                >
+                  <span>{recentDraft.title}</span>
+                  <time dateTime={recentDraft.updatedAt}>{formatDraftTime(recentDraft.updatedAt)}</time>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="empty-panel-text">保存过的草稿会出现在这里。</p>
+          )}
+        </section>
+        <section className="draft-todo-panel" aria-label="草稿 Todo">
+          <div className="draft-panel-heading">
+            <h2>Todo</h2>
+          </div>
         <label className="sr-only" htmlFor="new-todo">
           新增 Todo
         </label>
@@ -134,11 +149,24 @@ export function CapturePage({
             ))}
           </ul>
         ) : (
-          <div className="draft-empty-state">
-            <img src="/assets/ui/empty-memos-cloud.png" alt="" aria-hidden="true" />
-          </div>
+          <p className="empty-panel-text">AI 整理或手动添加后，Todo 会在这里排列。</p>
         )}
+        </section>
       </section>
     </div>
   );
+}
+
+function formatDraftTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
 }

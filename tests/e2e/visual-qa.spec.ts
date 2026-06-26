@@ -127,6 +127,7 @@ for (const spec of authPageSpecs) {
     await expect(page.locator(".auth-visual-panel")).toBeVisible();
     await expect(page.locator(".auth-orb-asset")).toBeVisible();
     await expect(page.locator(".auth-background-asset")).toHaveCount(2);
+    await expect(page.locator('.auth-shell img[src^="/assets/ui/"]')).toHaveCount(0);
     await assertAuthVisualIntegrity(page);
 
     await mkdir(outputDir, { recursive: true });

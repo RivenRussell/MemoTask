@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ApiClient, apiClient } from "../api/client";
+import { ApiClient, ApiRequestError, apiClient } from "../api/client";
 import { DEFAULT_PROMPT } from "../shared/ai-defaults";
 import type { AiSettingsView, AuthUserView, DraftTodoInput, Memo, PublishMemoInput, SyncStatusView } from "../types";
 
@@ -350,10 +350,33 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
     try {
       await action();
     } catch (caught) {
+      if (caught instanceof ApiRequestError && caught.code === "AUTH_REQUIRED") {
+        resetAuthenticatedState();
+        setAuthMode("login");
+        setError(caught.message);
+        return;
+      }
+      if (caught instanceof ApiRequestError && caught.code === "EMAIL_NOT_VERIFIED") {
+        resetAuthenticatedState();
+        setAuthMode("unverified");
+        setError(caught.message);
+        return;
+      }
       setError(caught instanceof Error ? caught.message : "请求失败，请稍后重试");
     } finally {
       setIsLoading(false);
     }
+  }
+
+  function resetAuthenticatedState() {
+    setAuthUser(null);
+    setMemos([]);
+    setActiveMemo(null);
+    setHistoryMemos([]);
+    setRecentDrafts([]);
+    setDraft(emptyDraft);
+    setCurrentDraftId(null);
+    setSyncStatus(null);
   }
 
   async function refreshMemos() {

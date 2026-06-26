@@ -9,6 +9,15 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
 }
 
 describe("frontend API client", () => {
+  it("includes browser credentials on every request so session cookies survive on mobile browsers", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({ memos: [] }));
+    const client = new ApiClient(fetchMock);
+
+    await client.listMemos();
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/memos", { credentials: "include" });
+  });
+
   it("binds the default browser fetch before making requests", async () => {
     const originalFetch = globalThis.fetch;
     const fetchMock = vi.fn(function (this: unknown) {
@@ -47,6 +56,7 @@ describe("frontend API client", () => {
     expect(memos.map((memo) => memo.title)).toEqual(["新 Memo"]);
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/memos/publish", {
       method: "POST",
+      credentials: "include",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         title: "新 Memo",
@@ -54,7 +64,7 @@ describe("frontend API client", () => {
         todos: [{ title: "第一步", notes: null, generatedByAi: false }]
       })
     });
-    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/memos");
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/memos", { credentials: "include" });
   });
 
   it("surfaces Worker validation messages", async () => {

@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import App from "../../src/App";
+import { ApiRequestError, type ApiClient } from "../../src/api/client";
 import { createAuthenticatedUiTestClient } from "./test-client";
 
 function renderAuthApp(path = "/memos") {
@@ -10,6 +11,34 @@ function renderAuthApp(path = "/memos") {
 }
 
 describe("MemoTask auth flow", () => {
+  it("renders the login screen without heavyweight raster artwork", async () => {
+    renderAuthApp("/");
+
+    expect(await screen.findByRole("heading", { name: "登录 MemoTask" })).toBeInTheDocument();
+    expect(document.querySelector('.auth-shell img[src^="/assets/ui/"]')).not.toBeInTheDocument();
+    expect(document.querySelector(".auth-orb-asset")).toBeInTheDocument();
+  });
+
+  it("returns to login instead of leaving the shell open when a protected request loses its session", async () => {
+    const expiredSessionClient = {
+      getCurrentUser: async () => ({
+        id: "user-expired",
+        email: "expired@example.com",
+        emailVerified: true,
+        createdAt: "2026-06-23T12:00:00.000Z"
+      }),
+      listMemos: async () => {
+        throw new ApiRequestError("AUTH_REQUIRED", "请先登录", 401);
+      }
+    } as unknown as ApiClient;
+
+    render(<App client={expiredSessionClient} />);
+
+    expect(await screen.findByRole("heading", { name: "登录 MemoTask" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "队列" })).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe("/login");
+  });
+
   it("shows login instead of memo data when the user is not signed in", async () => {
     renderAuthApp("/");
 
