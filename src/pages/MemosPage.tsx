@@ -1,5 +1,5 @@
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
+import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { MemoCard } from "../components/MemoCard";
 import type { Memo } from "../types";
 
@@ -37,28 +37,38 @@ export function MemosPage({
   }
 
   return (
-    <div className="content-grid memos-grid">
-      {memos.length === 0 ? (
-        <section className="soft-card intro-card empty-memo-card">
-          <h2>还没有 Memo</h2>
-        </section>
-      ) : (
-        <DndContext collisionDetection={closestCenter} sensors={sensors} onDragEnd={handleDragEnd}>
-          <SortableContext items={memos.map((memo) => memo.id)} strategy={rectSortingStrategy}>
-            {memos.map((memo, index) => (
-              <MemoCard
-                canMoveDown={index < memos.length - 1}
-                canMoveUp={index > 0}
-                key={memo.id}
-                memo={memo}
-                onMove={onMoveMemo}
-                onOpen={onOpenMemo}
-                onToggleTodo={onToggleTodo}
-              />
-            ))}
-          </SortableContext>
-        </DndContext>
-      )}
+    <div className="timeline-shell">
+      <section className="feed-composer-card" aria-label="快速记录">
+        <div className="composer-avatar">M</div>
+        <div className="composer-copy">
+          <h2>快速记录</h2>
+          <p>像写下一条备忘录一样开始，之后再让 AI 拆成 Todo。</p>
+        </div>
+      </section>
+      <div className="timeline-feed">
+        {memos.length === 0 ? (
+          <section className="empty-memo-card">
+            <h2>还没有 Memo</h2>
+            <p>新的备忘录会按队列顺序出现在这里。</p>
+          </section>
+        ) : (
+          <DndContext collisionDetection={closestCenter} sensors={sensors} onDragEnd={handleDragEnd}>
+            <SortableContext items={memos.map((memo) => memo.id)} strategy={verticalListSortingStrategy}>
+              {memos.map((memo, index) => (
+                <MemoCard
+                  canMoveDown={index < memos.length - 1}
+                  canMoveUp={index > 0}
+                  key={memo.id}
+                  memo={memo}
+                  onMove={onMoveMemo}
+                  onOpen={onOpenMemo}
+                  onToggleTodo={onToggleTodo}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
+        )}
+      </div>
     </div>
   );
 }

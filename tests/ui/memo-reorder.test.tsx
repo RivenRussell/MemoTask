@@ -34,5 +34,8 @@ async function publishMemo(primaryNav: HTMLElement, title: string, content: stri
 }
 
 function memoTitles(): string[] {
-  return screen.getAllByRole("article").map((card) => within(card).getByRole("heading", { level: 2 }).textContent ?? "");
+  return screen
+    .getAllByRole("article")
+    .filter((card) => card.classList.contains("memo-feed-item"))
+    .map((card) => within(card).getByRole("heading", { level: 2 }).textContent ?? "");
 }

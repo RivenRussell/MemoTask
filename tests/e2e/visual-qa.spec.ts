@@ -170,7 +170,8 @@ test("visual QA keeps the empty queue focused", async ({ page }) => {
   await page.goto("/memos");
   await expect(page.getByText("还没有 Memo")).toBeVisible();
   await expect(page.getByText("Memo 卡片预览")).toHaveCount(0);
-  await expect(page.locator(".soft-card")).toHaveCount(1);
+  await expect(page.locator(".timeline-feed")).toBeVisible();
+  await expect(page.locator(".empty-memo-card")).toBeVisible();
   await assertVisualIntegrity(page);
 });
 
@@ -405,7 +406,8 @@ async function assertVisualIntegrity(page: Page) {
       bodyTextLength: document.body.innerText.trim().length,
       backgroundColor: window.getComputedStyle(document.body).backgroundColor,
       rootChildren: document.querySelector("#root")?.children.length ?? 0,
-      visibleCards: [...document.querySelectorAll(".soft-card")].filter(visible).length,
+      visibleSurfaces: [...document.querySelectorAll(".soft-card, .memo-feed-item, .feed-composer-card, .empty-memo-card")]
+        .filter(visible).length,
       horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
       overflowingButtons,
       doneTextDecorations,
@@ -416,9 +418,9 @@ async function assertVisualIntegrity(page: Page) {
   });
 
   expect(result.bodyTextLength).toBeGreaterThan(10);
-  expect(result.backgroundColor).toBe("rgb(248, 250, 252)");
+  expect(result.backgroundColor).toBe("rgb(17, 19, 24)");
   expect(result.rootChildren).toBeGreaterThan(0);
-  expect(result.visibleCards).toBeGreaterThan(0);
+  expect(result.visibleSurfaces).toBeGreaterThan(0);
   expect(result.horizontalOverflow).toBeLessThanOrEqual(1);
   expect(result.overflowingButtons).toEqual([]);
   expect(result.doneTextDecorations).toEqual([]);
@@ -466,7 +468,7 @@ async function assertAuthVisualIntegrity(page: Page) {
     };
   });
 
-  expect(result.backgroundColor).toBe("rgb(248, 250, 252)");
+  expect(result.backgroundColor).toBe("rgb(17, 19, 24)");
   expect(result.rootChildren).toBeGreaterThan(0);
   expect(result.cardWidth).toBeGreaterThan(280);
   expect(result.visualPanelWidth).toBeGreaterThan(0);

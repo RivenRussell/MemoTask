@@ -1,6 +1,6 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ArrowDown, ArrowUp, Pencil } from "lucide-react";
+import { ArrowDown, ArrowUp, CheckCircle2, GripHorizontal, Pencil } from "lucide-react";
 import type { Memo } from "../types";
 
 export function MemoCard({
@@ -21,10 +21,11 @@ export function MemoCard({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: memo.id });
   const visibleTodos = memo.todos.slice(0, 3);
   const remainingTodoCount = Math.max(0, memo.todos.length - visibleTodos.length);
+  const completedTodoCount = memo.todos.filter((todo) => todo.status === "done").length;
 
   return (
     <article
-      className={`soft-card memo-card${isDragging ? " is-dragging" : ""}`}
+      className={`memo-feed-item memo-card${isDragging ? " is-dragging" : ""}`}
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
     >
@@ -35,12 +36,27 @@ export function MemoCard({
         type="button"
         {...attributes}
         {...listeners}
-      />
-      <div className="card-heading">
+      >
+        <GripHorizontal size={16} />
+      </button>
+      <header className="memo-feed-header">
+        <div className="memo-avatar">M</div>
+        <div className="memo-feed-meta">
+          <span>MemoTask</span>
+          <time dateTime={memo.updatedAt}>{formatMemoTime(memo.updatedAt)}</time>
+        </div>
+      </header>
+      <div className="card-heading memo-feed-title">
         <h2>{memo.title}</h2>
+        {memo.todos.length > 0 ? (
+          <span className="todo-count-pill memo-progress-pill">
+            <CheckCircle2 size={14} />
+            {completedTodoCount}/{memo.todos.length}
+          </span>
+        ) : null}
       </div>
-      <p className="memo-content">{memo.content}</p>
-      <ul className="todo-list">
+      <p className="memo-content memo-feed-content">{memo.content}</p>
+      <ul className="todo-list memo-feed-todos">
         {visibleTodos.map((todo) => (
           <li
             key={todo.id}
@@ -59,7 +75,7 @@ export function MemoCard({
         ))}
         {remainingTodoCount > 0 ? <li className="todo-remaining">还有 {remainingTodoCount} 个 Todo</li> : null}
       </ul>
-      <div className="card-actions">
+      <footer className="card-actions memo-feed-actions">
         <button
           aria-label={`上移 ${memo.title}`}
           className="secondary-action icon-only-action"
@@ -82,7 +98,21 @@ export function MemoCard({
           <Pencil size={16} />
           详情
         </button>
-      </div>
+      </footer>
     </article>
   );
+}
+
+function formatMemoTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
 }

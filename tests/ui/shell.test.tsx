@@ -15,6 +15,14 @@ describe("MemoTask app shell", () => {
 
     expect(await screen.findByRole("heading", { name: "队列" })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/memos");
+    expect(document.querySelector(".app-rail")).not.toBeNull();
+    expect(document.querySelector(".workspace-main")).not.toBeNull();
+    expect(document.querySelector(".timeline-feed")).not.toBeNull();
+    expect(document.querySelector(".utility-sidebar")).not.toBeNull();
+    expect(document.querySelector(".memos-grid")).toBeNull();
+    expect(screen.getByText("快速记录")).toBeInTheDocument();
+    expect(screen.getByText("筛选")).toBeInTheDocument();
+    expect(screen.getByText("标签")).toBeInTheDocument();
     expect(screen.getByText("还没有 Memo")).toBeInTheDocument();
     expect(document.querySelector(".empty-memo-card img")).toBeNull();
     expect(screen.queryByText("当前 Memo 队列")).not.toBeInTheDocument();
@@ -37,12 +45,13 @@ describe("MemoTask app shell", () => {
   it("opens history only from the queue page action", async () => {
     renderAt("/");
 
-    await userEvent.click(await screen.findByRole("button", { name: "打开历史" }));
+    const topbar = await screen.findByRole("banner");
+    await userEvent.click(within(topbar).getByRole("button", { name: "打开历史" }));
 
     expect(await screen.findByRole("heading", { name: "历史" })).toBeInTheDocument();
     expect(screen.getByText("还没有历史 Memo")).toBeInTheDocument();
     expect(screen.queryByText("完整 Memo 历史")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "返回队列" })).toBeInTheDocument();
+    expect(within(screen.getByRole("banner")).getByRole("button", { name: "返回队列" })).toBeInTheDocument();
   });
 
   it("switches between recording, queue, and settings without showing forbidden features", async () => {
