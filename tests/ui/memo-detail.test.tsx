@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import App from "../../src/App";
@@ -161,6 +161,27 @@ describe("MemoTask memo detail workflow", () => {
     await userEvent.click(screen.getByRole("button", { name: "打开 长 Todo Memo" }));
 
     expect(screen.getByLabelText("编辑 这是一条很长的 Todo，需要在详情页完整显示而不是被单行输入框裁切").tagName).toBe("TEXTAREA");
+  });
+
+  it("shows a Markdown preview beside the editable memo content", async () => {
+    window.history.pushState({}, "", "/memos");
+    render(
+      <App
+        client={createUiTestClient({
+          initialMemos: [createMemo("memo-detail-markdown", "Markdown 详情", [])]
+        })}
+      />
+    );
+
+    expect(await screen.findByText("Markdown 详情")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "打开 Markdown 详情" }));
+    const contentInput = screen.getByLabelText("详情原文");
+    await userEvent.clear(contentInput);
+    fireEvent.change(contentInput, { target: { value: "## 详情预览\n\n- [x] 可读" } });
+
+    const preview = screen.getByLabelText("Markdown 预览");
+    expect(within(preview).getByRole("heading", { name: "详情预览" })).toBeInTheDocument();
+    expect(within(preview).getByRole("checkbox", { name: "可读" })).toBeChecked();
   });
 });
 

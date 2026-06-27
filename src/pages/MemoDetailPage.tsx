@@ -3,6 +3,7 @@ import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, v
 import { CSS } from "@dnd-kit/utilities";
 import { Archive, ArrowLeft, CheckCircle2, GripVertical, Save, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import type { Memo, MemoTodo } from "../types";
 
 interface MemoDetailPageProps {
@@ -78,6 +79,10 @@ export function MemoDetailPage({
           value={content}
           onChange={(event) => setContent(event.target.value)}
         />
+        <section className="memo-detail-preview" aria-label="Markdown 预览">
+          <h2>Markdown 预览</h2>
+          <MarkdownRenderer content={content} />
+        </section>
         {message ? <p className="status-message">{message}</p> : null}
         {error ? <p className="status-message status-message-error">{error}</p> : null}
         <div className="inline-actions memo-detail-actions">

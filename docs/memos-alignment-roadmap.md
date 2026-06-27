@@ -24,7 +24,7 @@ The requested sequence is:
 | `v4.0.0` | Baseline | Current stable baseline plus this roadmap |
 | `v4.1.0` | Stage 1 | Memos-like UI and timeline workspace |
 | `v4.2.0` | Stage 2 | Tags and search (completed) |
-| `v4.2.3` | Stage 3 | Markdown rendering |
+| `v4.2.3` | Stage 3 | Markdown rendering (completed) |
 | `v4.2.4` | Stage 4 | Markdown checkbox and structured Todo synchronization |
 
 The `v4.2.3` and `v4.2.4` numbers are intentionally kept as requested, even though they are not a conventional major/minor sequence.

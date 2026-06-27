@@ -2,6 +2,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { ArrowDown, ArrowUp, CheckCircle2, GripHorizontal, Pencil } from "lucide-react";
 import type { Memo } from "../types";
+import { MarkdownRenderer } from "./MarkdownRenderer";
 
 export function MemoCard({
   canMoveDown,
@@ -55,7 +56,7 @@ export function MemoCard({
           </span>
         ) : null}
       </div>
-      <p className="memo-content memo-feed-content">{memo.content}</p>
+      <MarkdownRenderer className="memo-content memo-feed-content" content={memo.content} />
       <ul className="todo-list memo-feed-todos">
         {visibleTodos.map((todo) => (
           <li

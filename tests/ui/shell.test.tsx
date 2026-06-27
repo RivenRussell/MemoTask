@@ -166,6 +166,21 @@ describe("MemoTask app shell", () => {
     await userEvent.click(screen.getByRole("button", { name: "清除筛选" }));
     expect(screen.getByText("生活记录")).toBeInTheDocument();
   });
+
+  it("renders memo feed content as Markdown", async () => {
+    window.history.pushState({}, "", "/");
+    render(
+      <App
+        client={createUiTestClient({
+          initialMemos: [createMemo("memo-markdown-feed", "Markdown Memo", "## 发布计划\n\n- [ ] 补充文档", [])]
+        })}
+      />
+    );
+
+    expect(await screen.findByText("Markdown Memo")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "发布计划" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "补充文档" })).toBeInTheDocument();
+  });
 });
 
 function createMemo(id: string, title: string, content: string, todoTitles: string[]): Memo {
