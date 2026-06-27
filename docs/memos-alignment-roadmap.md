@@ -25,7 +25,7 @@ The requested sequence is:
 | `v4.1.0` | Stage 1 | Memos-like UI and timeline workspace |
 | `v4.2.0` | Stage 2 | Tags and search (completed) |
 | `v4.2.3` | Stage 3 | Markdown rendering (completed) |
-| `v4.2.4` | Stage 4 | Markdown checkbox and structured Todo synchronization |
+| `v4.2.4` | Stage 4 | Markdown checkbox and structured Todo synchronization (completed) |
 
 The `v4.2.3` and `v4.2.4` numbers are intentionally kept as requested, even though they are not a conventional major/minor sequence.
 
@@ -148,6 +148,12 @@ Structured Todo remains the source of truth.
 
 Markdown checkboxes are plain content unless explicitly linked to a structured Todo. Linked Markdown checkboxes can update their corresponding Todo, and Todo changes can update the linked Markdown checkbox.
 
+The first implementation uses an inline stable marker:
+
+```md
+- [ ] Write release notes <!-- memotask:todo=todo-123 -->
+```
+
 ### Main changes
 
 - Define a stable mapping between Markdown checkbox items and structured Todos.
@@ -163,6 +169,15 @@ Markdown checkboxes are plain content unless explicitly linked to a structured T
 - If a linked Markdown checkbox is deleted, do not silently hard-delete the Todo. Either unlink it or require an explicit Todo deletion action.
 - Unlinked Markdown checkboxes do not count toward automatic archive.
 - AI-generated Todos are not automatically written into Markdown unless a specific conversion action is introduced.
+
+### Completed implementation notes
+
+- Linked Markdown tasks are parsed by exact `memotask:todo=TODO_ID` markers.
+- Linked Markdown title/status edits update the structured Todo when the memo is saved.
+- Structured Todo status/title edits update linked Markdown checkbox markers/text.
+- Sync markers are hidden from the rendered Markdown reading view.
+- Unlinked Markdown checkboxes remain content-only.
+- Automatic archive remains based on structured Todos, including Todos completed through linked Markdown checkbox edits.
 
 ### Acceptance criteria
 

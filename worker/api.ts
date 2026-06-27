@@ -6,6 +6,11 @@ import { moveMemoToHistory, restoreMemoFromHistory, shouldAutoArchiveMemo, toggl
 import { MemoryRepository } from "./repository/memory-repository";
 import type { AiSettings, MemoRepository } from "./repository/types";
 import { DEFAULT_PROMPT } from "../src/shared/ai-defaults";
+import {
+  syncMarkdownCheckboxForTodo,
+  syncMarkdownTaskTitleForTodo,
+  syncTodosFromLinkedMarkdownTasks
+} from "../src/shared/markdown-todos";
 
 interface ApiOptions {
   repository?: MemoRepository;
@@ -419,12 +424,23 @@ export function createApi(options: ApiOptions = {}) {
     }
 
     const body = await readJson<{ title?: string; content?: string }>(context);
-    const updated = await repository.saveMemo(userId, {
+    const now = getNow(options);
+    const content = body.content ?? memo.content;
+    const linkedTodoSync = syncTodosFromLinkedMarkdownTasks(memo.todos, content, now);
+    const nextMemo = {
       ...memo,
       title: body.title?.trim() || memo.title,
-      content: body.content ?? memo.content,
-      updatedAt: getNow(options)
-    });
+      content,
+      todos: linkedTodoSync.todos,
+      autoArchiveSuppressedUntilChange: linkedTodoSync.statusChanged ? false : memo.autoArchiveSuppressedUntilChange,
+      updatedAt: now
+    };
+    const updated = await repository.saveMemo(
+      userId,
+      linkedTodoSync.statusChanged && shouldAutoArchiveMemo(nextMemo.todos, nextMemo.autoArchiveSuppressedUntilChange)
+        ? moveMemoToHistory(nextMemo, "completed", now)
+        : nextMemo
+    );
     return context.json({ memo: updated });
   });
 
@@ -480,13 +496,14 @@ export function createApi(options: ApiOptions = {}) {
     const updatedTodo = await repository.updateTodo(userId, toggleTodoStatus(todo, now));
     const memo = await repository.findMemo(userId, updatedTodo.memoId);
     if (memo) {
+      const nextContent = syncMarkdownCheckboxForTodo(memo.content, updatedTodo.id, updatedTodo.status);
       const nextTodos = memo.todos.map((candidate) => (candidate.id === updatedTodo.id ? updatedTodo : candidate));
       const shouldArchive = shouldAutoArchiveMemo(nextTodos, memo.autoArchiveSuppressedUntilChange);
       await repository.saveMemo(
         userId,
         shouldArchive
-          ? moveMemoToHistory({ ...memo, todos: nextTodos }, "completed", now)
-          : { ...memo, todos: nextTodos, autoArchiveSuppressedUntilChange: false, updatedAt: now }
+          ? moveMemoToHistory({ ...memo, content: nextContent, todos: nextTodos }, "completed", now)
+          : { ...memo, content: nextContent, todos: nextTodos, autoArchiveSuppressedUntilChange: false, updatedAt: now }
       );
     }
 
@@ -526,12 +543,22 @@ export function createApi(options: ApiOptions = {}) {
     }
 
     const body = await readJson<{ title?: string; notes?: string | null }>(context);
+    const now = getNow(options);
     const updated = await repository.updateTodo(userId, {
       ...todo,
       title: body.title?.trim() || todo.title,
       notes: body.notes === undefined ? todo.notes : body.notes,
-      updatedAt: getNow(options)
+      updatedAt: now
     });
+    const memo = await repository.findMemo(userId, updated.memoId);
+    if (memo) {
+      await repository.saveMemo(userId, {
+        ...memo,
+        content: syncMarkdownTaskTitleForTodo(memo.content, updated.id, updated.title),
+        todos: memo.todos.map((candidate) => (candidate.id === updated.id ? updated : candidate)),
+        updatedAt: now
+      });
+    }
     return context.json({ todo: updated });
   });
 

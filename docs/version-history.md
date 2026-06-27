@@ -5,12 +5,12 @@
 ## 当前版本
 
 ```text
-版本号：v4.2.3
+版本号：v4.2.4
 分支：codex/v2-auth
-标签：v4.2.3
+标签：v4.2.4
 ```
 
-v4.2.3 完成 Markdown 渲染阶段。它在时间线和详情页中渲染 GitHub Flavored Markdown，让标题、列表、链接、引用、代码块、表格和任务列表 checkbox 以 Memos 式内容阅读体验呈现；Markdown checkbox 暂不与结构化 Todo 同步。
+v4.2.4 完成 Markdown checkbox 与结构化 Todo 同步阶段。带有 `<!-- memotask:todo=TODO_ID -->` 标记的 Markdown task 会与对应 Todo 同步标题和完成状态；未绑定的 Markdown checkbox 仍然只是正文内容。
 
 ## 关键版本点
 
@@ -28,6 +28,7 @@ v4.2.3 完成 Markdown 渲染阶段。它在时间线和详情页中渲染 GitHu
 | `v4.1.0` | Git 标签 | Memos 式 UI 与时间线工作台 |
 | `v4.2.0` | Git 标签 | 标签与搜索 |
 | `v4.2.3` | Git 标签 | Markdown 渲染 |
+| `v4.2.4` | Git 标签 | Markdown checkbox 与结构化 Todo 同步 |
 
 ## v4 规划版本点
 
@@ -37,7 +38,7 @@ v4.2.3 完成 Markdown 渲染阶段。它在时间线和详情页中渲染 GitHu
 | `v4.1.0` | Memos 式 UI 与时间线工作台（已完成） |
 | `v4.2.0` | 标签与搜索（已完成） |
 | `v4.2.3` | Markdown 渲染（已完成） |
-| `v4.2.4` | Markdown checkbox 与结构化 Todo 同步 |
+| `v4.2.4` | Markdown checkbox 与结构化 Todo 同步（已完成） |
 
 详细计划见 [MemoTask v4 Memos Alignment Roadmap](memos-alignment-roadmap.md)。
 

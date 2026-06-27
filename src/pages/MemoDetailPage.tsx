@@ -63,6 +63,11 @@ export function MemoDetailPage({
 
   const completedTodoCount = memo.todos.filter((todo) => todo.status === "done").length;
 
+  useEffect(() => {
+    setTitle(memo.title);
+    setContent(memo.content);
+  }, [memo.content, memo.id, memo.title]);
+
   return (
     <div className="capture-layout memo-detail-layout">
       <section className="soft-card capture-editor paper-editor memo-detail-editor">
@@ -169,6 +174,10 @@ function SortableTodoRow({
     titleInput.style.height = "auto";
     titleInput.style.height = `${titleInput.scrollHeight}px`;
   }, [title]);
+
+  useEffect(() => {
+    setTitle(todo.title);
+  }, [todo.id, todo.title]);
 
   function saveTodoTitle() {
     if (title.trim() && title.trim() !== todo.title) {

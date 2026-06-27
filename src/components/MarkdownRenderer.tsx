@@ -2,6 +2,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 export function MarkdownRenderer({ content, className = "" }: { content: string; className?: string }) {
+  const renderedContent = content.replace(/\s*<!--\s*memotask:todo=[A-Za-z0-9_-]+\s*-->/g, "");
+
   return (
     <div className={className ? `markdown-body ${className}` : "markdown-body"}>
       <ReactMarkdown
@@ -25,7 +27,7 @@ export function MarkdownRenderer({ content, className = "" }: { content: string;
           )
         }}
       >
-        {content}
+        {renderedContent}
       </ReactMarkdown>
     </div>
   );

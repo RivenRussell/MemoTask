@@ -578,8 +578,12 @@ export function useMemoTaskState(client: ApiClient = apiClient): AppState {
       try {
         await client.toggleTodo(todoId);
         const nextMemos = await client.listMemos();
+        const nextActiveMemo =
+          previousActiveMemo && previousActiveMemo.todos.some((todo) => todo.id === todoId)
+            ? await client.getMemo(previousActiveMemo.id)
+            : null;
         setMemos(nextMemos);
-        setActiveMemo((current) => nextMemos.find((memo) => memo.id === current?.id) ?? current);
+        setActiveMemo((current) => nextActiveMemo ?? nextMemos.find((memo) => memo.id === current?.id) ?? current);
       } catch (caught) {
         setMemos(previousMemos);
         setActiveMemo(previousActiveMemo);

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import App from "../../src/App";
@@ -182,6 +182,65 @@ describe("MemoTask memo detail workflow", () => {
     const preview = screen.getByLabelText("Markdown 预览");
     expect(within(preview).getByRole("heading", { name: "详情预览" })).toBeInTheDocument();
     expect(within(preview).getByRole("checkbox", { name: "可读" })).toBeChecked();
+  });
+
+  it("saves linked Markdown task edits back to the structured detail Todo", async () => {
+    window.history.pushState({}, "", "/memos");
+    render(
+      <App
+        client={createUiTestClient({
+          initialMemos: [
+            {
+              ...createMemo("memo-linked-markdown-save", "Markdown 同步", [
+                createTodo("todo-linked-markdown-save", "旧标题", "memo-linked-markdown-save")
+              ]),
+              content: "- [ ] 旧标题 <!-- memotask:todo=todo-linked-markdown-save -->"
+            }
+          ]
+        })}
+      />
+    );
+
+    expect(await screen.findByText("Markdown 同步")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "打开 Markdown 同步" }));
+    const contentInput = screen.getByLabelText("详情原文");
+    await userEvent.clear(contentInput);
+    fireEvent.change(contentInput, {
+      target: { value: "- [x] 新标题 <!-- memotask:todo=todo-linked-markdown-save -->\n- [x] 未绑定 checkbox" }
+    });
+    await userEvent.click(screen.getByRole("button", { name: "保存 Memo" }));
+
+    expect(await screen.findByDisplayValue("新标题")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Markdown 预览")).getByRole("checkbox", { name: "新标题" })).toBeChecked();
+  });
+
+  it("reflects structured Todo toggles in linked Markdown preview checkboxes", async () => {
+    window.history.pushState({}, "", "/memos");
+    render(
+      <App
+        client={createUiTestClient({
+          initialMemos: [
+            {
+              ...createMemo("memo-linked-markdown-toggle", "Markdown 勾选同步", [
+                createTodo("todo-linked-markdown-toggle", "发布说明", "memo-linked-markdown-toggle")
+              ]),
+              content: "- [ ] 发布说明 <!-- memotask:todo=todo-linked-markdown-toggle -->"
+            }
+          ]
+        })}
+      />
+    );
+
+    expect(await screen.findByText("Markdown 勾选同步")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "打开 Markdown 勾选同步" }));
+
+    const preview = screen.getByLabelText("Markdown 预览");
+    expect(within(preview).getByRole("checkbox", { name: "发布说明" })).not.toBeChecked();
+    await userEvent.click(within(screen.getByRole("heading", { name: "Todo 管理" }).closest("section") as HTMLElement).getByRole("checkbox", { name: "发布说明" }));
+
+    await waitFor(() => {
+      expect(within(preview).getByRole("checkbox", { name: "发布说明" })).toBeChecked();
+    });
   });
 });
 

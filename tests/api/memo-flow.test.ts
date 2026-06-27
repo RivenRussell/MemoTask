@@ -140,6 +140,159 @@ describe("memo data loop API", () => {
     expect(detail.memo.todos[0].title).toBe("保留 Todo");
   });
 
+  it("syncs linked Markdown checkbox edits back to structured todos", async () => {
+    const { app } = createTestApi();
+    const publishResponse = await app.request("/api/memos/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Markdown Todo",
+        content: "先发布结构化 Todo",
+        todos: [{ title: "旧标题" }, { title: "保留未完成" }]
+      })
+    });
+    const published = await json(publishResponse);
+    const linkedTodoId = published.memo.todos[0].id;
+
+    const updateResponse = await app.request(`/api/memos/${published.memo.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Markdown Todo",
+        content: `- [x] 发布说明 <!-- memotask:todo=${linkedTodoId} -->\n- [x] 未绑定 checkbox`
+      })
+    });
+
+    expect(updateResponse.status).toBe(200);
+    const updated = await json(updateResponse);
+    expect(updated.memo.todos[0]).toMatchObject({ id: linkedTodoId, title: "发布说明", status: "done" });
+    expect(updated.memo.todos[1]).toMatchObject({ title: "保留未完成", status: "todo" });
+    const active = await json(await app.request("/api/memos"));
+    expect(active.memos).toHaveLength(1);
+  });
+
+  it("auto archives when a linked Markdown checkbox completes the last structured todo", async () => {
+    const { app } = createTestApi();
+    const publishResponse = await app.request("/api/memos/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Markdown 完成归档",
+        content: "先发布结构化 Todo",
+        todos: [{ title: "发布说明" }]
+      })
+    });
+    const published = await json(publishResponse);
+    const todoId = published.memo.todos[0].id;
+
+    const updateResponse = await app.request(`/api/memos/${published.memo.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Markdown 完成归档",
+        content: `- [x] 发布说明 <!-- memotask:todo=${todoId} -->`
+      })
+    });
+
+    expect(updateResponse.status).toBe(200);
+    const active = await json(await app.request("/api/memos"));
+    const history = await json(await app.request("/api/history"));
+    expect(active.memos).toEqual([]);
+    expect(history.memos[0]).toMatchObject({ title: "Markdown 完成归档", historyReason: "completed" });
+  });
+
+  it("syncs structured todo toggles into linked Markdown checkbox markers", async () => {
+    const { app } = createTestApi();
+    const publishResponse = await app.request("/api/memos/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Toggle Markdown",
+        content: "先发布结构化 Todo",
+        todos: [{ title: "发布说明" }]
+      })
+    });
+    const published = await json(publishResponse);
+    const todoId = published.memo.todos[0].id;
+    await app.request(`/api/memos/${published.memo.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Toggle Markdown",
+        content: `- [ ] 发布说明 <!-- memotask:todo=${todoId} -->`
+      })
+    });
+
+    const toggleResponse = await app.request(`/api/todos/${todoId}/toggle`, { method: "POST" });
+
+    expect(toggleResponse.status).toBe(200);
+    const history = await json(await app.request("/api/history"));
+    expect(history.memos).toHaveLength(1);
+    expect(history.memos[0].content).toContain(`- [x] 发布说明 <!-- memotask:todo=${todoId} -->`);
+  });
+
+  it("syncs structured todo title edits into linked Markdown task text", async () => {
+    const { app } = createTestApi();
+    const publishResponse = await app.request("/api/memos/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Rename Markdown",
+        content: "先发布结构化 Todo",
+        todos: [{ title: "旧标题" }]
+      })
+    });
+    const published = await json(publishResponse);
+    const todoId = published.memo.todos[0].id;
+    await app.request(`/api/memos/${published.memo.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Rename Markdown",
+        content: `- [ ] 旧标题 <!-- memotask:todo=${todoId} -->`
+      })
+    });
+
+    const renameResponse = await app.request(`/api/todos/${todoId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "新标题" })
+    });
+
+    expect(renameResponse.status).toBe(200);
+    const detail = await json(await app.request(`/api/memos/${published.memo.id}`));
+    expect(detail.memo.content).toContain(`- [ ] 新标题 <!-- memotask:todo=${todoId} -->`);
+  });
+
+  it("keeps unlinked Markdown checkboxes content-only", async () => {
+    const { app } = createTestApi();
+    const publishResponse = await app.request("/api/memos/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Unlinked Markdown",
+        content: "先发布结构化 Todo",
+        todos: [{ title: "发布说明" }]
+      })
+    });
+    const published = await json(publishResponse);
+
+    const updateResponse = await app.request(`/api/memos/${published.memo.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Unlinked Markdown",
+        content: "- [x] 发布说明"
+      })
+    });
+
+    expect(updateResponse.status).toBe(200);
+    const updated = await json(updateResponse);
+    expect(updated.memo.todos[0]).toMatchObject({ title: "发布说明", status: "todo" });
+    const active = await json(await app.request("/api/memos"));
+    expect(active.memos).toHaveLength(1);
+  });
+
   it("archives and restores a memo without immediately auto-archiving it again", async () => {
     const { app } = createTestApi();
     const publishResponse = await app.request("/api/memos/publish", {

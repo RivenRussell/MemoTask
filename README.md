@@ -2,7 +2,7 @@
 
 MemoTask 是一个低压力的个人 Memo 待办整理工具。它的核心思路很简单：先把脑子里的想法、计划、链接、琐事写成一条 Memo，再让人工智能把这条 Memo 内部拆成可执行的待办项。用户不需要一开始就想清楚分类、日期和提醒，只需要先记录，再整理。
 
-当前版本为 **v4.0.0**。这个版本是 Memos 对齐改造的基线版本，保留账号体系、用户隔离、AI Todo、历史记录和部署能力，并新增 v4 四阶段改造路线文档。
+当前版本为 **v4.2.4**。这个版本完成了 Memos 对齐改造的四阶段路线：Memos 式时间线界面、标签与搜索、Markdown 渲染，以及 Markdown checkbox 与结构化 Todo 的显式同步。
 
 生产访问地址：
 
@@ -17,7 +17,7 @@ v4 会按四个阶段向 Memos 的产品体验靠拢，同时保留 MemoTask 的
 - `v4.1.0`：Memos 式 UI 与时间线工作台。
 - `v4.2.0`：标签与搜索。
 - `v4.2.3`：Markdown 渲染。
-- `v4.2.4`：Markdown checkbox 与结构化 Todo 同步。
+- `v4.2.4`：Markdown checkbox 与结构化 Todo 同步（已完成）。
 
 详细计划见 [MemoTask v4 Memos Alignment Roadmap](docs/memos-alignment-roadmap.md)。
 
@@ -71,6 +71,8 @@ Memo 是主要容器，Todo 永远属于某条 Memo。Memo 在队列里的前后
 Memo 功能：
 
 - 快速记录原始 Memo。
+- 支持在 Memo 正文中使用 Markdown。
+- 支持通过 `<!-- memotask:todo=TODO_ID -->` 将 Markdown checkbox 显式绑定到结构化 Todo。
 - 草稿自动保存。
 - 最近草稿恢复。
 - 发布 Memo 到队列。
@@ -79,6 +81,7 @@ Memo 功能：
 - Memo 详情编辑。
 - Memo 手动归档。
 - Todo 新增、编辑、删除、勾选和排序。
+- 绑定后的 Markdown checkbox 与结构化 Todo 状态和标题保持同步。
 - 所有 Todo 完成后自动归档 Memo。
 
 人工智能功能：
@@ -400,7 +403,7 @@ POST /api/ai/analyze-draft
 当前发布版本：
 
 ```text
-v4.0.0
+v4.2.4
 ```
 
 重要分支和标签：
@@ -411,6 +414,10 @@ codex/v2-auth           v2 开发和发布分支
 v1                      已存在的 v1 标签
 v2.0.0                  v2 正式标签
 v4.0.0                  当前 v4 基线标签
+v4.1.0                  Memos 式 UI 与时间线工作台
+v4.2.0                  标签与搜索
+v4.2.3                  Markdown 渲染
+v4.2.4                  Markdown checkbox 与结构化 Todo 同步
 ```
 
 查看版本历史：

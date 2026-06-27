@@ -35,4 +35,11 @@ describe("MarkdownRenderer", () => {
     expect(document.querySelector("script")).toBeNull();
     expect((window as typeof window & { __unsafeMarkdown?: boolean }).__unsafeMarkdown).toBeUndefined();
   });
+
+  it("hides MemoTask todo link markers from rendered task-list labels", () => {
+    render(<MarkdownRenderer content="- [x] 发布说明 <!-- memotask:todo=todo-release -->" />);
+
+    expect(screen.getByRole("checkbox", { name: "发布说明" })).toBeChecked();
+    expect(screen.queryByText(/memotask:todo/)).not.toBeInTheDocument();
+  });
 });
