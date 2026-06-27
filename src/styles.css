@@ -1792,6 +1792,12 @@ body {
   padding: 0 6px;
 }
 
+.utility-clear-action {
+  justify-self: start;
+  min-height: 30px;
+  padding: 0 8px;
+}
+
 .utility-wide-action {
   width: 100%;
   justify-content: flex-start;
@@ -1803,6 +1809,32 @@ body {
   font-size: 13px;
   line-height: 1.6;
   overflow-wrap: anywhere;
+}
+
+.tag-filter-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-filter-button {
+  min-height: 30px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  padding: 0 10px;
+  color: var(--text-muted);
+  background: var(--surface-solid);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tag-filter-button:hover,
+.tag-filter-button:focus-visible,
+.tag-filter-button.is-active {
+  color: var(--text-strong);
+  border-color: rgba(95, 159, 231, 0.58);
+  background: rgba(95, 159, 231, 0.14);
+  outline: none;
 }
 
 .timeline-shell {

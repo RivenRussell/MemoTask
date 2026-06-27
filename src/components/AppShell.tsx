@@ -16,17 +16,29 @@ export function AppShell({
   page,
   activePrimary,
   title,
+  memoFilterQuery,
+  memoTags,
+  selectedMemoTag,
   userEmail,
+  onClearMemoFilters,
   onLogout,
   onNavigate,
+  onSelectMemoTag,
+  onSetMemoFilterQuery,
   children
 }: {
   page: Page;
   activePrimary: PrimaryPage;
   title: string;
+  memoFilterQuery: string;
+  memoTags: string[];
+  selectedMemoTag: string | null;
   userEmail: string;
+  onClearMemoFilters: () => void;
   onLogout: () => void;
   onNavigate: (page: Page) => void;
+  onSelectMemoTag: (tag: string | null) => void;
+  onSetMemoFilterQuery: (query: string) => void;
   children: React.ReactNode;
 }) {
   const workspaceRef = useRef<HTMLElement | null>(null);
@@ -83,16 +95,39 @@ export function AppShell({
             <Search size={15} />
             筛选
           </label>
-          <input id="memo-search-preview" placeholder="搜索备忘录" disabled />
+          <input
+            id="memo-search-preview"
+            placeholder="搜索备忘录"
+            value={memoFilterQuery}
+            onChange={(event) => onSetMemoFilterQuery(event.target.value)}
+          />
+          {memoFilterQuery || selectedMemoTag ? (
+            <button className="text-action utility-clear-action" type="button" onClick={onClearMemoFilters}>
+              清除筛选
+            </button>
+          ) : null}
         </section>
         <section className="utility-panel">
           <div className="utility-panel-heading">
             <h2>标签</h2>
-            <button className="text-action utility-more-action" type="button" disabled aria-label="标签功能将在 v4.2.0 支持">
-              ...
-            </button>
           </div>
-          <p className="muted-copy">标签会在 v4.2.0 支持。</p>
+          {memoTags.length === 0 ? <p className="muted-copy">在 Memo 中写 #标签 即可筛选。</p> : null}
+          {memoTags.length > 0 ? (
+            <div className="tag-filter-list" aria-label="标签筛选">
+              {memoTags.map((tag) => (
+                <button
+                  key={tag}
+                  className={selectedMemoTag === tag ? "tag-filter-button is-active" : "tag-filter-button"}
+                  type="button"
+                  aria-pressed={selectedMemoTag === tag}
+                  aria-label={`筛选标签 ${tag}`}
+                  onClick={() => onSelectMemoTag(selectedMemoTag === tag ? null : tag)}
+                >
+                  #{tag}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </section>
         <section className="utility-panel">
           <h2>导航</h2>

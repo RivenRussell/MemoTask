@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { AppShell } from "./components/AppShell";
 import type { ApiClient } from "./api/client";
 import { AuthPage } from "./pages/AuthPage";
@@ -6,10 +7,23 @@ import { HistoryPage } from "./pages/HistoryPage";
 import { MemoDetailPage } from "./pages/MemoDetailPage";
 import { MemosPage } from "./pages/MemosPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { collectMemoTags, filterMemos } from "./shared/memo-filters";
 import { useMemoTaskState } from "./state/app-state";
 
 export default function App({ client }: { client?: ApiClient }) {
   const state = useMemoTaskState(client);
+  const [memoFilterQuery, setMemoFilterQuery] = useState("");
+  const [selectedMemoTag, setSelectedMemoTag] = useState<string | null>(null);
+  const memoTags = useMemo(() => collectMemoTags(state.memos), [state.memos]);
+  const filteredMemos = useMemo(
+    () => filterMemos(state.memos, { query: memoFilterQuery, selectedTag: selectedMemoTag }),
+    [memoFilterQuery, selectedMemoTag, state.memos]
+  );
+
+  function clearMemoFilters() {
+    setMemoFilterQuery("");
+    setSelectedMemoTag(null);
+  }
 
   if (state.authMode === "checking") {
     return (
@@ -49,13 +63,22 @@ export default function App({ client }: { client?: ApiClient }) {
       page={state.page}
       activePrimary={state.activePrimary}
       title={state.title}
+      memoFilterQuery={memoFilterQuery}
+      memoTags={memoTags}
+      selectedMemoTag={selectedMemoTag}
       userEmail={state.authUser?.email ?? ""}
+      onClearMemoFilters={clearMemoFilters}
       onLogout={() => void state.logout()}
       onNavigate={state.setPage}
+      onSelectMemoTag={setSelectedMemoTag}
+      onSetMemoFilterQuery={setMemoFilterQuery}
     >
       {state.page === "memos" ? (
         <MemosPage
-          memos={state.memos}
+          hasActiveFilters={Boolean(memoFilterQuery.trim() || selectedMemoTag)}
+          memos={filteredMemos}
+          totalMemoCount={state.memos.length}
+          onClearFilters={clearMemoFilters}
           onMoveMemo={(memoId, direction) => void state.moveMemo(memoId, direction)}
           onOpenMemo={state.openMemoDetail}
           onReorderMemos={(memoIds) => void state.reorderMemoList(memoIds)}

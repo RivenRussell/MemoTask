@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import App from "../../src/App";
 import { createUiTestClient, findPrimaryNav } from "./test-client";
+import type { Memo } from "../../src/types";
 
 function renderAt(path: string) {
   window.history.pushState({}, "", path);
@@ -134,4 +135,69 @@ describe("MemoTask app shell", () => {
     expect(await screen.findByRole("heading", { name: "Memo 详情" })).toBeInTheDocument();
     expect(screen.getByText("正在加载 Memo 详情")).toBeInTheDocument();
   });
+
+  it("filters the timeline by search and content tags", async () => {
+    window.history.pushState({}, "", "/");
+    render(
+      <App
+        client={createUiTestClient({
+          initialMemos: [
+            createMemo("memo-work", "工作计划 #work", "整理 #launch 发布说明", ["检查发布清单"]),
+            createMemo("memo-life", "生活记录", "买咖啡 #life", ["预约牙医"])
+          ]
+        })}
+      />
+    );
+
+    expect(await screen.findByText("工作计划 #work")).toBeInTheDocument();
+    expect(screen.getByText("生活记录")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("筛选"), "牙医");
+    expect(screen.queryByText("工作计划 #work")).not.toBeInTheDocument();
+    expect(screen.getByText("生活记录")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "清除筛选" }));
+    expect(screen.getByText("工作计划 #work")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "筛选标签 launch" }));
+    expect(screen.getByText("工作计划 #work")).toBeInTheDocument();
+    expect(screen.queryByText("生活记录")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "清除筛选" }));
+    expect(screen.getByText("生活记录")).toBeInTheDocument();
+  });
 });
+
+function createMemo(id: string, title: string, content: string, todoTitles: string[]): Memo {
+  return {
+    id,
+    userId: "default",
+    title,
+    content,
+    status: "active",
+    historyReason: null,
+    sortOrder: 1,
+    lastActiveSortOrder: null,
+    autoArchiveSuppressedUntilChange: false,
+    aiState: "idle",
+    aiError: null,
+    createdAt: "2026-06-23T08:45:00.000Z",
+    updatedAt: "2026-06-23T08:45:00.000Z",
+    publishedAt: "2026-06-23T08:45:00.000Z",
+    historyAt: null,
+    deletedAt: null,
+    todos: todoTitles.map((todoTitle, index) => ({
+      id: `${id}-todo-${index}`,
+      memoId: id,
+      title: todoTitle,
+      notes: null,
+      status: "todo",
+      sortOrder: index + 1,
+      generatedByAi: false,
+      createdAt: "2026-06-23T08:45:00.000Z",
+      updatedAt: "2026-06-23T08:45:00.000Z",
+      completedAt: null,
+      deletedAt: null
+    }))
+  };
+}

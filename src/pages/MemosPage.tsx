@@ -4,13 +4,19 @@ import { MemoCard } from "../components/MemoCard";
 import type { Memo } from "../types";
 
 export function MemosPage({
+  hasActiveFilters,
   memos,
+  totalMemoCount,
+  onClearFilters,
   onMoveMemo,
   onOpenMemo,
   onReorderMemos,
   onToggleTodo
 }: {
+  hasActiveFilters: boolean;
   memos: Memo[];
+  totalMemoCount: number;
+  onClearFilters: () => void;
   onMoveMemo: (memoId: string, direction: "up" | "down") => void;
   onOpenMemo: (memoId: string) => void;
   onReorderMemos: (memoIds: string[]) => void;
@@ -48,8 +54,13 @@ export function MemosPage({
       <div className="timeline-feed">
         {memos.length === 0 ? (
           <section className="empty-memo-card">
-            <h2>还没有 Memo</h2>
-            <p>新的备忘录会按队列顺序出现在这里。</p>
+            <h2>{hasActiveFilters && totalMemoCount > 0 ? "没有匹配的 Memo" : "还没有 Memo"}</h2>
+            <p>{hasActiveFilters && totalMemoCount > 0 ? "清除搜索或标签后可以回到完整队列。" : "新的备忘录会按队列顺序出现在这里。"}</p>
+            {hasActiveFilters ? (
+              <button className="secondary-action" type="button" onClick={onClearFilters}>
+                清除筛选
+              </button>
+            ) : null}
           </section>
         ) : (
           <DndContext collisionDetection={closestCenter} sensors={sensors} onDragEnd={handleDragEnd}>
