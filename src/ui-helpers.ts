@@ -135,6 +135,14 @@ export function isPullRefreshGesture(gesture: PullGesture): boolean {
   return deltaY >= 72 && deltaY > deltaX * 1.4;
 }
 
+export function didRefreshComplete(results: boolean[]): boolean {
+  return results.length > 0 && results.every(Boolean);
+}
+
+export function isBusyInScope(busy: string, scopes: string[]): boolean {
+  return Boolean(busy) && scopes.some((scope) => busy === scope || busy.startsWith(scope));
+}
+
 function memoTextHasTag(text: MemoText, normalizedTag: string): boolean {
   const source = `${text.title}\n${text.content}`;
   for (const match of source.matchAll(tagTokenPattern)) {

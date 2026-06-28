@@ -7,9 +7,11 @@ import { Icon } from "./ui-icons";
 import {
   addMemoTextTag,
   collectMemoTags,
+  didRefreshComplete,
   filterMemosByQuery,
   getQuickRecordShortcut,
   isPullRefreshGesture,
+  isBusyInScope,
   moveIdByDelta,
   removeMemoTextTag,
   toggleTodoInMemoList
@@ -81,6 +83,8 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const captureTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const pullStartRef = useRef<{ x: number; y: number } | null>(null);
+  const busyRef = useRef("");
+  const refreshingRef = useRef(false);
   const canHideToTray = typeof window !== "undefined" && Boolean(window.memotaskDesktop?.hideToTray);
 
   useEffect(() => {
@@ -144,7 +148,7 @@ export default function App() {
   const visibleMemos = useMemo(() => filterMemosByQuery(memos, workspaceQuery), [memos, workspaceQuery]);
   const sidebarTags = useMemo(() => collectMemoTags(tags, memos), [tags, memos]);
 
-  async function refreshWorkspace() {
+  async function refreshWorkspace(): Promise<boolean> {
     try {
       const [nextMemos, nextTags, nextDrafts] = await Promise.all([
         apiClient.listMemos(selectedTag ?? undefined),
@@ -154,41 +158,52 @@ export default function App() {
       setMemos(nextMemos);
       setTags(nextTags);
       setDrafts(nextDrafts);
+      return true;
     } catch (requestError) {
       setError(errorMessage(requestError));
+      return false;
     }
   }
 
   async function refreshCurrentView(showMessage = false) {
+    if (refreshingRef.current) {
+      return;
+    }
+    refreshingRef.current = true;
     setRefreshing(true);
     setError("");
+    setMessage("");
     try {
+      let results: boolean[];
       if (view === "history") {
-        await Promise.all([refreshHistory(), refreshWorkspace(), refreshSettings()]);
+        results = await Promise.all([refreshHistory(), refreshWorkspace(), refreshSettings()]);
       } else if (view === "account") {
-        await Promise.all([refreshSettings(), refreshWorkspace()]);
+        results = await Promise.all([refreshSettings(), refreshWorkspace()]);
       } else {
-        await Promise.all([refreshWorkspace(), refreshSettings()]);
+        results = await Promise.all([refreshWorkspace(), refreshSettings()]);
       }
-      if (showMessage) {
+      if (showMessage && didRefreshComplete(results)) {
         setMessage("已刷新");
       }
     } finally {
+      refreshingRef.current = false;
       setRefreshing(false);
     }
   }
 
-  async function refreshHistory() {
+  async function refreshHistory(): Promise<boolean> {
     try {
       const query = historyQuery.trim();
       const nextHistory = query || selectedTag ? await apiClient.searchHistory(query, selectedTag ?? undefined) : await apiClient.listHistory();
       setHistory(nextHistory);
+      return true;
     } catch (requestError) {
       setError(errorMessage(requestError));
+      return false;
     }
   }
 
-  async function refreshSettings() {
+  async function refreshSettings(): Promise<boolean> {
     try {
       const [settings, status] = await Promise.all([apiClient.getAiSettings(), apiClient.getSyncStatus()]);
       setAiSettings(settings);
@@ -199,12 +214,18 @@ export default function App() {
         apiKey: "",
         promptTemplate: settings.promptTemplate
       });
+      return true;
     } catch (requestError) {
       setError(errorMessage(requestError));
+      return false;
     }
   }
 
   async function withBusy(label: string, action: () => Promise<void>) {
+    if (busyRef.current) {
+      return;
+    }
+    busyRef.current = label;
     setBusy(label);
     setError("");
     setMessage("");
@@ -213,6 +234,7 @@ export default function App() {
     } catch (requestError) {
       setError(errorMessage(requestError));
     } finally {
+      busyRef.current = "";
       setBusy("");
     }
   }
@@ -278,7 +300,7 @@ export default function App() {
   }
 
   function handleTouchStart(event: ReactTouchEvent<HTMLDivElement>) {
-    if (window.scrollY > 0 || refreshing) {
+    if (window.scrollY > 0 || refreshingRef.current) {
       pullStartRef.current = null;
       return;
     }
@@ -312,10 +334,10 @@ export default function App() {
     }
 
     event.preventDefault();
-    if (shortcut === "publish" && busy !== "publish") {
+    if (shortcut === "publish" && !isBusyInScope(busyRef.current || busy, ["publish", "analyze"])) {
       void handlePublishDraft();
     }
-    if (shortcut === "analyze" && busy !== "analyze") {
+    if (shortcut === "analyze" && !isBusyInScope(busyRef.current || busy, ["publish", "analyze"])) {
       void handleAnalyzeDraft();
     }
   }
@@ -330,15 +352,15 @@ export default function App() {
     if (!editedMemo) {
       return;
     }
-    const optimisticMemo = {
-      ...memo,
-      title: editedMemo.title,
-      content: editedMemo.content,
-      tags: extractMemoTagsFromText(editedMemo.title, editedMemo.content),
-      updatedAt: new Date().toISOString()
-    };
-    setMemos((items) => replaceOrRemoveMemo(items, optimisticMemo));
     await withBusy(`save-${memo.id}`, async () => {
+      const optimisticMemo = {
+        ...memo,
+        title: editedMemo.title,
+        content: editedMemo.content,
+        tags: extractMemoTagsFromText(editedMemo.title, editedMemo.content),
+        updatedAt: new Date().toISOString()
+      };
+      setMemos((items) => replaceOrRemoveMemo(items, optimisticMemo));
       const updated = await apiClient.updateMemo(memo.id, { title: editedMemo.title, content: editedMemo.content });
       setMemos((items) => replaceOrRemoveMemo(items, updated));
       setExpandedMemoId(updated.status === "active" ? updated.id : null);
@@ -364,8 +386,8 @@ export default function App() {
   }
 
   async function handleToggleTodo(todo: MemoTodo) {
-    setMemos((items) => toggleTodoInMemoList(items, todo.id, new Date().toISOString()));
     await withBusy(`todo-${todo.id}`, async () => {
+      setMemos((items) => toggleTodoInMemoList(items, todo.id, new Date().toISOString()));
       const result = await apiClient.toggleTodo(todo.id);
       const updatedMemo = result.memo;
       if (updatedMemo) {
@@ -382,8 +404,8 @@ export default function App() {
     if (!edit || !edit.title.trim()) {
       return;
     }
-    setMemos((items) => updateTodoInMemoList(items, { ...todo, title: edit.title.trim(), notes: edit.notes.trim() || null }));
     await withBusy(`todo-save-${todo.id}`, async () => {
+      setMemos((items) => updateTodoInMemoList(items, { ...todo, title: edit.title.trim(), notes: edit.notes.trim() || null }));
       const updated = await apiClient.updateTodo(todo.id, { title: edit.title, notes: edit.notes.trim() || null });
       setMemos((items) => updateTodoInMemoList(items, updated));
       await refreshSettings();
@@ -395,10 +417,10 @@ export default function App() {
     if (!editedMemo?.newTodo.trim()) {
       return;
     }
-    const optimisticTodo = createOptimisticTodo(memo.id, editedMemo.newTodo.trim(), memo.todos.length + 1);
-    setMemos((items) => appendTodoToMemoList(items, memo.id, optimisticTodo));
-    setEditedMemo({ ...editedMemo, newTodo: "" });
     await withBusy(`todo-add-${memo.id}`, async () => {
+      const optimisticTodo = createOptimisticTodo(memo.id, editedMemo.newTodo.trim(), memo.todos.length + 1);
+      setMemos((items) => appendTodoToMemoList(items, memo.id, optimisticTodo));
+      setEditedMemo({ ...editedMemo, newTodo: "" });
       const created = await apiClient.createTodo(memo.id, { title: optimisticTodo.title, generatedByAi: false });
       setMemos((items) => appendTodoToMemoList(removeTodoFromMemoList(items, optimisticTodo.id), memo.id, created));
       await refreshSettings();
@@ -406,8 +428,8 @@ export default function App() {
   }
 
   async function deleteTodo(todoId: string) {
-    setMemos((items) => removeTodoFromMemoList(items, todoId));
     await withBusy(`todo-delete-${todoId}`, async () => {
+      setMemos((items) => removeTodoFromMemoList(items, todoId));
       await apiClient.deleteTodo(todoId);
       await refreshSettings();
     });
@@ -419,8 +441,8 @@ export default function App() {
     if (nextIds === ids) {
       return;
     }
-    setMemos((items) => reorderMemoList(items, nextIds));
     await withBusy(`reorder-${memoId}`, async () => {
+      setMemos((items) => reorderMemoList(items, nextIds));
       const reordered = await apiClient.reorderMemos(nextIds);
       setMemos(reordered);
       await refreshSettings();
@@ -428,12 +450,13 @@ export default function App() {
   }
 
   async function reorderTodo(memo: Memo, todoId: string, delta: -1 | 1) {
-    const nextIds = moveIdByDelta(memo.todos.map((todo) => todo.id), todoId, delta);
-    if (nextIds === memo.todos.map((todo) => todo.id)) {
+    const ids = memo.todos.map((todo) => todo.id);
+    const nextIds = moveIdByDelta(ids, todoId, delta);
+    if (nextIds === ids) {
       return;
     }
-    setMemos((items) => replaceMemoTodos(items, memo.id, orderTodosByIds(memo.todos, nextIds)));
     await withBusy(`todo-reorder-${todoId}`, async () => {
+      setMemos((items) => replaceMemoTodos(items, memo.id, orderTodosByIds(memo.todos, nextIds)));
       const todos = await apiClient.reorderTodos(memo.id, nextIds);
       setMemos((items) => replaceMemoTodos(items, memo.id, todos));
       await refreshSettings();
@@ -441,12 +464,12 @@ export default function App() {
   }
 
   async function archiveMemo(memoId: string) {
-    const current = memos.find((memo) => memo.id === memoId);
-    if (current) {
-      setMemos((items) => items.filter((item) => item.id !== memoId));
-      setHistory((items) => [{ ...current, status: "history", historyReason: "archived", historyAt: new Date().toISOString() }, ...items]);
-    }
     await withBusy(`archive-${memoId}`, async () => {
+      const current = memos.find((memo) => memo.id === memoId);
+      if (current) {
+        setMemos((items) => items.filter((item) => item.id !== memoId));
+        setHistory((items) => [{ ...current, status: "history", historyReason: "archived", historyAt: new Date().toISOString() }, ...items]);
+      }
       const archived = await apiClient.archiveMemo(memoId);
       setMemos((items) => replaceOrRemoveMemo(items, archived));
       await Promise.all([refreshHistory(), refreshSettings()]);
@@ -561,6 +584,7 @@ export default function App() {
         onDraftSelect={(item) => setDraft({ id: item.id, content: item.content })}
       />
       <main className="app-main">
+        {refreshing ? <div className="refresh-bar" aria-label="正在刷新" /> : null}
         {error ? <Notice tone="error" text={error} onDismiss={() => setError("")} /> : null}
         {message ? <Notice tone="info" text={message} onDismiss={() => setMessage("")} /> : null}
         {view === "workspace" ? (
@@ -603,6 +627,7 @@ export default function App() {
         {view === "history" ? (
           <HistoryView
             history={history}
+            busy={busy}
             expandedHistoryId={expandedHistoryId}
             query={historyQuery}
             onQueryChange={setHistoryQuery}
@@ -860,6 +885,7 @@ function WorkspaceView(props: {
   onReorderTodo: (memo: Memo, todoId: string, delta: -1 | 1) => void;
   onArchive: (memoId: string) => void;
 }) {
+  const captureBusy = Boolean(props.busy);
   return (
     <div className="workspace">
       <section className="capture-panel" aria-labelledby="capture-title">
@@ -873,11 +899,11 @@ function WorkspaceView(props: {
         />
         <div className="capture-actions">
           <span className="hash-hint">#</span>
-          <button className="primary-button" disabled={props.busy === "analyze"} onClick={props.onAnalyze}>
-            AI 整理
+          <button className="primary-button" disabled={captureBusy} onClick={props.onAnalyze}>
+            {props.busy === "analyze" ? "整理中..." : "AI 整理"}
           </button>
-          <button className="ghost-button" disabled={props.busy === "publish"} onClick={props.onPublish}>
-            发布
+          <button className="ghost-button" disabled={captureBusy} onClick={props.onPublish}>
+            {props.busy === "publish" ? "发布中..." : "发布"}
           </button>
         </div>
       </section>
@@ -895,6 +921,7 @@ function WorkspaceView(props: {
             <MemoCard
               key={memo.id}
               memo={memo}
+              busy={props.busy}
               expanded={props.expandedMemoId === memo.id}
               editedMemo={props.editedMemo}
               todoEdits={props.todoEdits}
@@ -977,6 +1004,7 @@ function AiResultPanel(props: {
 
 function MemoCard(props: {
   memo: Memo;
+  busy: string;
   expanded: boolean;
   editedMemo: EditableMemo | null;
   todoEdits: Record<string, PendingTodoEdit>;
@@ -996,6 +1024,7 @@ function MemoCard(props: {
 }) {
   const editor = props.editedMemo;
   const editorTags = editor ? extractMemoTagsFromText(editor.title, editor.content) : props.memo.tags;
+  const memoBusy = Boolean(props.busy);
 
   return (
     <article className={`memo-card ${props.expanded ? "expanded" : ""}`}>
@@ -1011,10 +1040,10 @@ function MemoCard(props: {
           </button>
         )}
         <div className="card-actions">
-          <button className="icon-button" onClick={() => props.onReorder(-1)} aria-label="上移">
+          <button className="icon-button" disabled={memoBusy} onClick={() => props.onReorder(-1)} aria-label="上移">
             <Icon name="chevronUp" />
           </button>
-          <button className="icon-button" onClick={() => props.onReorder(1)} aria-label="下移">
+          <button className="icon-button" disabled={memoBusy} onClick={() => props.onReorder(1)} aria-label="下移">
             <Icon name="chevronDown" />
           </button>
           <button className="icon-button" onClick={props.onOpen} aria-label={props.expanded ? "收起" : "展开"}>
@@ -1040,6 +1069,7 @@ function MemoCard(props: {
           </div>
           <TodoEditorList
             memo={props.memo}
+            busy={props.busy}
             todoEdits={props.todoEdits}
             newTodo={editor.newTodo}
             onNewTodoChange={(newTodo) => props.onEditMemo({ ...editor, newTodo })}
@@ -1051,9 +1081,13 @@ function MemoCard(props: {
             onReorderTodo={props.onReorderTodo}
           />
           <div className="editor-actions">
-            <button className="primary-button" onClick={props.onSaveMemo}>保存</button>
+            <button className="primary-button" disabled={memoBusy} onClick={props.onSaveMemo}>
+              {props.busy === `save-${props.memo.id}` ? "保存中..." : "保存"}
+            </button>
             <button className="ghost-button" onClick={props.onOpen}>收起</button>
-            <button className="ghost-button" onClick={props.onArchive}>归档</button>
+            <button className="ghost-button" disabled={memoBusy} onClick={props.onArchive}>
+              {props.busy === `archive-${props.memo.id}` ? "归档中..." : "归档"}
+            </button>
           </div>
         </div>
       ) : (
@@ -1069,6 +1103,7 @@ function MemoCard(props: {
 
 function TodoEditorList(props: {
   memo: Memo;
+  busy: string;
   todoEdits: Record<string, PendingTodoEdit>;
   newTodo: string;
   onNewTodoChange: (value: string) => void;
@@ -1079,27 +1114,29 @@ function TodoEditorList(props: {
   onAddTodo: () => void;
   onReorderTodo: (todoId: string, delta: -1 | 1) => void;
 }) {
+  const listBusy = Boolean(props.busy);
   return (
     <div className="todo-editor">
       {props.memo.todos.map((todo) => {
         const edit = props.todoEdits[todo.id] ?? { title: todo.title, notes: todo.notes ?? "" };
+        const todoBusy = Boolean(props.busy);
         return (
           <div key={todo.id} className="todo-edit-row">
-            <button className={`checkbox ${todo.status === "done" ? "checked" : ""}`} onClick={() => props.onToggleTodo(todo)} aria-label="切换 Todo">
+            <button className={`checkbox ${todo.status === "done" ? "checked" : ""}`} disabled={todoBusy} onClick={() => props.onToggleTodo(todo)} aria-label="切换 Todo">
               {todo.status === "done" ? <Icon name="check" size={14} /> : null}
             </button>
-            <button className="drag-mini" onClick={() => props.onReorderTodo(todo.id, -1)} aria-label="Todo 上移">
+            <button className="drag-mini" disabled={todoBusy} onClick={() => props.onReorderTodo(todo.id, -1)} aria-label="Todo 上移">
               <Icon name="chevronUp" size={14} />
             </button>
             <input value={edit.title} onChange={(event) => props.onTodoEdit(todo.id, { ...edit, title: event.target.value })} />
             <input value={edit.notes} onChange={(event) => props.onTodoEdit(todo.id, { ...edit, notes: event.target.value })} placeholder="notes" />
-            <button className="icon-button" onClick={() => props.onSaveTodo(todo)} aria-label="保存 Todo">
+            <button className="icon-button" disabled={todoBusy} onClick={() => props.onSaveTodo(todo)} aria-label="保存 Todo">
               <Icon name="save" />
             </button>
-            <button className="icon-button" onClick={() => props.onDeleteTodo(todo.id)} aria-label="删除 Todo">
+            <button className="icon-button" disabled={todoBusy} onClick={() => props.onDeleteTodo(todo.id)} aria-label="删除 Todo">
               <Icon name="trash" />
             </button>
-            <button className="drag-mini" onClick={() => props.onReorderTodo(todo.id, 1)} aria-label="Todo 下移">
+            <button className="drag-mini" disabled={todoBusy} onClick={() => props.onReorderTodo(todo.id, 1)} aria-label="Todo 下移">
               <Icon name="chevronDown" size={14} />
             </button>
           </div>
@@ -1108,7 +1145,7 @@ function TodoEditorList(props: {
       <div className="add-todo-row">
         <Icon name="plus" />
         <input value={props.newTodo} onChange={(event) => props.onNewTodoChange(event.target.value)} placeholder="添加 Todo" />
-        <button onClick={props.onAddTodo}>添加</button>
+        <button disabled={listBusy} onClick={props.onAddTodo}>{props.busy === `todo-add-${props.memo.id}` ? "添加中..." : "添加"}</button>
       </div>
     </div>
   );
@@ -1135,6 +1172,7 @@ function TodoList({ todos, onToggleTodo }: { todos: MemoTodo[]; onToggleTodo: (t
 
 function HistoryView(props: {
   history: Memo[];
+  busy: string;
   expandedHistoryId: string | null;
   query: string;
   onQueryChange: (query: string) => void;
@@ -1142,6 +1180,7 @@ function HistoryView(props: {
   onRestore: (memoId: string) => void;
   onDelete: (memoId: string) => void;
 }) {
+  const historyBusy = Boolean(props.busy);
   return (
     <section className="history-view" aria-labelledby="history-title">
       <div className="view-header">
@@ -1149,8 +1188,8 @@ function HistoryView(props: {
           <h1 id="history-title">历史记录</h1>
           <p>{props.history.length} 条记录</p>
         </div>
-        <SearchBox value={props.query} placeholder="搜索记录" onChange={props.onQueryChange} />
-        <button className="ghost-button">
+        <SearchBox value={props.query} placeholder="搜索记录" disabled={historyBusy} onChange={props.onQueryChange} />
+        <button className="ghost-button" disabled={historyBusy}>
           <Icon name="check" />
           选择
         </button>
@@ -1162,7 +1201,7 @@ function HistoryView(props: {
             const expanded = props.expandedHistoryId === memo.id;
             return (
               <article key={memo.id} className={`history-card ${expanded ? "expanded" : ""}`}>
-                <button className="history-body" onClick={() => props.onToggleExpanded(memo.id)}>
+                <button className="history-body" disabled={historyBusy} onClick={() => props.onToggleExpanded(memo.id)}>
                   <h3>{memo.title}</h3>
                   <p>{summarize(memo.content)}</p>
                   <TagStrip tags={memo.tags} />
@@ -1172,9 +1211,13 @@ function HistoryView(props: {
                     {memo.historyReason === "completed" ? "已完成" : "手动归档"}
                   </span>
                   <span>{doneCount}/{memo.todos.length} Todo</span>
-                  <button onClick={() => props.onRestore(memo.id)}>恢复</button>
-                  <button onClick={() => props.onDelete(memo.id)}>删除</button>
-                  <button className="icon-button" onClick={() => props.onToggleExpanded(memo.id)} aria-label="展开历史详情">
+                  <button disabled={historyBusy} onClick={() => props.onRestore(memo.id)}>
+                    {props.busy === `restore-${memo.id}` ? "恢复中..." : "恢复"}
+                  </button>
+                  <button disabled={historyBusy} onClick={() => props.onDelete(memo.id)}>
+                    {props.busy === `delete-history-${memo.id}` ? "删除中..." : "删除"}
+                  </button>
+                  <button className="icon-button" disabled={historyBusy} onClick={() => props.onToggleExpanded(memo.id)} aria-label="展开历史详情">
                     <Icon name={expanded ? "chevronUp" : "more"} />
                   </button>
                 </div>
@@ -1237,15 +1280,16 @@ function SettingsDrawer(props: SettingsProps & { onClose: () => void }) {
 }
 
 function SettingsContent(props: SettingsProps) {
+  const settingsBusy = Boolean(props.busy);
   return (
     <div className="settings-content">
       <section className="settings-section">
         <h3>账号</h3>
         <p>{props.user.email}</p>
         <p className="muted">账号状态：{props.user.emailVerified ? "正常" : "待验证"}</p>
-        <button className="ghost-button" onClick={props.onLogout}>
+        <button className="ghost-button" disabled={settingsBusy} onClick={props.onLogout}>
           <Icon name="logOut" />
-          退出登录
+          {props.busy === "logout" ? "退出中..." : "退出登录"}
         </button>
       </section>
       <section className="settings-section">
@@ -1263,8 +1307,12 @@ function SettingsContent(props: SettingsProps) {
           <input value={props.form.apiKey} onChange={(event) => props.setForm({ ...props.form, apiKey: event.target.value })} placeholder={props.settings.apiKeyMask ?? "未保存"} />
         </label>
         <div className="settings-actions">
-          <button className="primary-button" disabled={props.busy === "settings"} onClick={props.onSave}>保存设置</button>
-          <button className="ghost-button" disabled={props.busy === "ai-test"} onClick={props.onTest}>测试连接</button>
+          <button className="primary-button" disabled={settingsBusy} onClick={props.onSave}>
+            {props.busy === "settings" ? "保存中..." : "保存设置"}
+          </button>
+          <button className="ghost-button" disabled={settingsBusy} onClick={props.onTest}>
+            {props.busy === "ai-test" ? "测试中..." : "测试连接"}
+          </button>
         </div>
       </section>
       <section className="settings-section">
@@ -1273,13 +1321,15 @@ function SettingsContent(props: SettingsProps) {
           Prompt 模板
           <textarea value={props.form.promptTemplate} onChange={(event) => props.setForm({ ...props.form, promptTemplate: event.target.value })} />
         </label>
-        <button className="ghost-button" onClick={props.onResetPrompt}>恢复默认 Prompt</button>
+        <button className="ghost-button" disabled={settingsBusy} onClick={props.onResetPrompt}>
+          {props.busy === "prompt" ? "恢复中..." : "恢复默认 Prompt"}
+        </button>
       </section>
       <section className="settings-section data-section">
         <h3>数据</h3>
-        <button className="ghost-button" onClick={props.onExport}>
+        <button className="ghost-button" disabled={settingsBusy} onClick={props.onExport}>
           <Icon name="download" />
-          导出 JSON
+          {props.busy === "export" ? "导出中..." : "导出 JSON"}
         </button>
         <p className="sync-status">
           同步状态：{props.syncStatus.ok ? "正常" : "需要检查"}
@@ -1390,11 +1440,21 @@ function SidebarSection({ title, children }: { title: string; children: React.Re
   );
 }
 
-function SearchBox({ value, placeholder, onChange }: { value: string; placeholder: string; onChange: (value: string) => void }) {
+function SearchBox({
+  value,
+  placeholder,
+  disabled = false,
+  onChange
+}: {
+  value: string;
+  placeholder: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
   return (
     <label className="search-box">
       <Icon name="search" />
-      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
+      <input value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
       <Icon name="filter" />
     </label>
   );

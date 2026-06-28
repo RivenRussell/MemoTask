@@ -6,6 +6,8 @@ import {
   filterMemosByQuery,
   getQuickRecordShortcut,
   isPullRefreshGesture,
+  didRefreshComplete,
+  isBusyInScope,
   moveIdByDelta,
   removeMemoTextTag,
   toggleTodoInMemoList
@@ -99,9 +101,11 @@ describe("UI helper contract behavior", () => {
   });
 
   it("moves memo ids by one step for lightweight reorder controls", () => {
+    const ids = ["a", "b", "c"];
+
     expect(moveIdByDelta(["a", "b", "c"], "b", -1)).toEqual(["b", "a", "c"]);
     expect(moveIdByDelta(["a", "b", "c"], "b", 1)).toEqual(["a", "c", "b"]);
-    expect(moveIdByDelta(["a", "b", "c"], "a", -1)).toEqual(["a", "b", "c"]);
+    expect(moveIdByDelta(ids, "a", -1)).toBe(ids);
   });
 
   it("classifies quick record keyboard shortcuts without hijacking plain typing", () => {
@@ -121,5 +125,19 @@ describe("UI helper contract behavior", () => {
     expect(isPullRefreshGesture({ startX: 120, startY: 16, currentX: 126, currentY: 70 })).toBe(false);
     expect(isPullRefreshGesture({ startX: 120, startY: 90, currentX: 124, currentY: 16 })).toBe(false);
     expect(isPullRefreshGesture({ startX: 120, startY: 16, currentX: 230, currentY: 96 })).toBe(false);
+  });
+
+  it("shows refresh success only when every refresh source completed", () => {
+    expect(didRefreshComplete([true, true, true])).toBe(true);
+    expect(didRefreshComplete([true, false, true])).toBe(false);
+    expect(didRefreshComplete([])).toBe(false);
+  });
+
+  it("matches busy labels by exact operation or scoped prefix", () => {
+    expect(isBusyInScope("publish", ["publish", "analyze"])).toBe(true);
+    expect(isBusyInScope("save-memo-1", ["save-"])).toBe(true);
+    expect(isBusyInScope("todo-save-1", ["todo-save-", "todo-delete-"])).toBe(true);
+    expect(isBusyInScope("settings", ["publish", "analyze"])).toBe(false);
+    expect(isBusyInScope("", ["publish"])).toBe(false);
   });
 });
