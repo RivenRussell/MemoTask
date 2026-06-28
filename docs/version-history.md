@@ -5,12 +5,25 @@
 ## 当前版本
 
 ```text
-版本号：v5.0.4
+版本号：v5.1.0
 分支：codex/v2-auth
-标签：未创建
+标签：v5.1.0
 ```
 
-v5.0.4 是当前已部署标签体验优化版本，已上传并部署到 Cloudflare。当前线上用户使用 v5.0.4 部署版本。
+v5.1.0 是 GitHub main 分支发布版本，包含 v5.0.4 的结构化标签和彩色标签 chip 优化，并重新生成 PC 与 Android 安装包。
+
+v5.1.0 主要变化：
+
+- 将当前发布线同步到 GitHub `main` 分支。
+- 创建 Git 标签 `v5.1.0`。
+- 重新生成 v5.1.0 PC 端安装包和 Android APK，用于 GitHub Release 附件。
+
+v5.1.0 客户端安装包：
+
+- PC 端：`release/electron-v5.1.0/MemoTask-5.1.0-x64.exe`
+- Android 端：`release/electron-v5.1.0/MemoTask-5.1.0-android.apk`
+
+v5.0.4 是已部署标签体验优化版本，已上传并部署到 Cloudflare。当前线上用户使用 v5.0.4 部署版本。
 
 v5.0.4 主要变化：
 
@@ -78,6 +91,7 @@ v5.0.1 没有执行 `npm run worker:deploy`，也没有执行 `npm run db:migrat
 | `v5.0.2` | 已部署版本 | 刷新反馈、重复点击防护和操作忙碌状态优化 |
 | `v5.0.3` | 已部署版本 | Todo 勾选不卡顿、完成后即时归档、标签入口真实写入文本 |
 | `v5.0.4` | 已部署版本 | 结构化标签提交、彩色标签 chip 和旧 `#标签` 兼容；已部署 Cloudflare，已生成 PC 与 Android 安装包 |
+| `v5.1.0` | GitHub 发布版本 | main 分支发布点，包含 v5.0.4 标签体验优化并上传 PC 与 Android 安装包 |
 
 ## v4 规划版本点
 
