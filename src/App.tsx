@@ -13,8 +13,10 @@ import {
   isPullRefreshGesture,
   isBusyInScope,
   moveIdByDelta,
+  replaceOrRemoveMemoFromActiveList,
   removeMemoTextTag,
-  toggleTodoInMemoList
+  toggleTodoInMemoList,
+  upsertHistoryMemo
 } from "./ui-helpers";
 
 type View = "workspace" | "history" | "account";
@@ -67,6 +69,7 @@ export default function App() {
   const [workspaceQuery, setWorkspaceQuery] = useState("");
   const [historyQuery, setHistoryQuery] = useState("");
   const [draft, setDraft] = useState<DraftForm>({ id: null, content: "" });
+  const [draftTag, setDraftTag] = useState("");
   const [aiState, setAiState] = useState<AiPanelState>("idle");
   const [aiResult, setAiResult] = useState<AnalyzeDraftResult | null>(null);
   const [aiError, setAiError] = useState("");
@@ -74,6 +77,7 @@ export default function App() {
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
   const [editedMemo, setEditedMemo] = useState<EditableMemo | null>(null);
   const [todoEdits, setTodoEdits] = useState<Record<string, PendingTodoEdit>>({});
+  const [pendingTodoIds, setPendingTodoIds] = useState<string[]>([]);
   const [aiSettings, setAiSettings] = useState<AiSettingsView>(EMPTY_AI_SETTINGS);
   const [syncStatus, setSyncStatus] = useState<SyncStatusView>(EMPTY_SYNC_STATUS);
   const [settingsForm, setSettingsForm] = useState({ baseUrl: "", model: "", apiKey: "", promptTemplate: "" });
@@ -85,6 +89,7 @@ export default function App() {
   const pullStartRef = useRef<{ x: number; y: number } | null>(null);
   const busyRef = useRef("");
   const refreshingRef = useRef(false);
+  const pendingTodoIdsRef = useRef(new Set<string>());
   const canHideToTray = typeof window !== "undefined" && Boolean(window.memotaskDesktop?.hideToTray);
 
   useEffect(() => {
@@ -279,6 +284,19 @@ export default function App() {
     setAiState("applied");
   }
 
+  function addTagToDraft(tag = draftTag) {
+    if (!tag.trim()) {
+      return;
+    }
+
+    setDraft((current) => {
+      const next = addMemoTextTag({ title: "", content: current.content }, tag);
+      return { ...current, content: next.content };
+    });
+    setDraftTag("");
+    captureTextareaRef.current?.focus();
+  }
+
   async function handlePublishDraft() {
     await withBusy("publish", async () => {
       const content = draft.content.trim();
@@ -360,9 +378,9 @@ export default function App() {
         tags: extractMemoTagsFromText(editedMemo.title, editedMemo.content),
         updatedAt: new Date().toISOString()
       };
-      setMemos((items) => replaceOrRemoveMemo(items, optimisticMemo));
+      setMemos((items) => replaceOrRemoveMemoFromActiveList(items, optimisticMemo));
       const updated = await apiClient.updateMemo(memo.id, { title: editedMemo.title, content: editedMemo.content });
-      setMemos((items) => replaceOrRemoveMemo(items, updated));
+      setMemos((items) => replaceOrRemoveMemoFromActiveList(items, updated));
       setExpandedMemoId(updated.status === "active" ? updated.id : null);
       await Promise.all([refreshWorkspace(), refreshHistory(), refreshSettings()]);
       setMessage("Memo 已保存");
@@ -386,17 +404,34 @@ export default function App() {
   }
 
   async function handleToggleTodo(todo: MemoTodo) {
-    await withBusy(`todo-${todo.id}`, async () => {
-      setMemos((items) => toggleTodoInMemoList(items, todo.id, new Date().toISOString()));
+    if (pendingTodoIdsRef.current.has(todo.id)) {
+      return;
+    }
+
+    pendingTodoIdsRef.current.add(todo.id);
+    setPendingTodoIds((items) => [...items, todo.id]);
+    setError("");
+    setMemos((items) => toggleTodoInMemoList(items, todo.id, new Date().toISOString()));
+    try {
       const result = await apiClient.toggleTodo(todo.id);
       const updatedMemo = result.memo;
       if (updatedMemo) {
-        setMemos((items) => replaceOrRemoveMemo(items, updatedMemo));
+        setMemos((items) => replaceOrRemoveMemoFromActiveList(items, updatedMemo));
+        setHistory((items) => upsertHistoryMemo(items, updatedMemo));
+        if (updatedMemo.status === "history") {
+          setExpandedMemoId((current) => (current === updatedMemo.id ? null : current));
+        }
       } else {
         await refreshWorkspace();
       }
-      await Promise.all([refreshHistory(), refreshSettings()]);
-    });
+      void Promise.all([refreshHistory(), refreshSettings()]);
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+      await refreshWorkspace();
+    } finally {
+      pendingTodoIdsRef.current.delete(todo.id);
+      setPendingTodoIds((items) => items.filter((id) => id !== todo.id));
+    }
   }
 
   async function saveTodoEdit(todo: MemoTodo) {
@@ -471,7 +506,7 @@ export default function App() {
         setHistory((items) => [{ ...current, status: "history", historyReason: "archived", historyAt: new Date().toISOString() }, ...items]);
       }
       const archived = await apiClient.archiveMemo(memoId);
-      setMemos((items) => replaceOrRemoveMemo(items, archived));
+      setMemos((items) => replaceOrRemoveMemoFromActiveList(items, archived));
       await Promise.all([refreshHistory(), refreshSettings()]);
       setMessage("Memo 已归档");
     });
@@ -591,6 +626,10 @@ export default function App() {
           <WorkspaceView
             draft={draft}
             setDraft={setDraft}
+            draftTag={draftTag}
+            onDraftTagChange={setDraftTag}
+            suggestedTags={sidebarTags}
+            onAddDraftTag={addTagToDraft}
             captureTextareaRef={captureTextareaRef}
             aiState={aiState}
             aiResult={aiResult}
@@ -600,6 +639,7 @@ export default function App() {
             expandedMemoId={expandedMemoId}
             editedMemo={editedMemo}
             todoEdits={todoEdits}
+            pendingTodoIds={pendingTodoIds}
             onAnalyze={handleAnalyzeDraft}
             onApplyAiResult={handleApplyAiResult}
             onClearAi={() => {
@@ -857,6 +897,10 @@ function Sidebar(props: {
 function WorkspaceView(props: {
   draft: DraftForm;
   setDraft: (draft: DraftForm) => void;
+  draftTag: string;
+  onDraftTagChange: (tag: string) => void;
+  suggestedTags: string[];
+  onAddDraftTag: (tag?: string) => void;
   captureTextareaRef: RefObject<HTMLTextAreaElement | null>;
   aiState: AiPanelState;
   aiResult: AnalyzeDraftResult | null;
@@ -866,6 +910,7 @@ function WorkspaceView(props: {
   expandedMemoId: string | null;
   editedMemo: EditableMemo | null;
   todoEdits: Record<string, PendingTodoEdit>;
+  pendingTodoIds: string[];
   onAnalyze: () => void;
   onApplyAiResult: () => void;
   onClearAi: () => void;
@@ -886,6 +931,8 @@ function WorkspaceView(props: {
   onArchive: (memoId: string) => void;
 }) {
   const captureBusy = Boolean(props.busy);
+  const draftTags = extractMemoTagsFromText("", props.draft.content);
+  const suggestedTags = props.suggestedTags.filter((tag) => !draftTags.some((draftTag) => draftTag.toLocaleLowerCase() === tag.toLocaleLowerCase())).slice(0, 5);
   return (
     <div className="workspace">
       <section className="capture-panel" aria-labelledby="capture-title">
@@ -897,8 +944,35 @@ function WorkspaceView(props: {
           onKeyDown={props.onCaptureKeyDown}
           placeholder="随时记录..."
         />
+        <div className="capture-tags" aria-label="草稿标签">
+          {draftTags.map((tag) => (
+            <span key={tag} className="tag-chip selected">#{tag}</span>
+          ))}
+          <div className="draft-tag-input">
+            <span className="hash-hint">#</span>
+            <input
+              value={props.draftTag}
+              onChange={(event) => props.onDraftTagChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  props.onAddDraftTag();
+                }
+              }}
+              placeholder="添加标签"
+            />
+            <button className="ghost-button small" type="button" disabled={!props.draftTag.trim()} onClick={() => props.onAddDraftTag()}>
+              <Icon name="plus" />
+              标签
+            </button>
+          </div>
+          {suggestedTags.map((tag) => (
+            <button key={tag} type="button" className="tag-chip" onClick={() => props.onAddDraftTag(tag)}>
+              #{tag}
+            </button>
+          ))}
+        </div>
         <div className="capture-actions">
-          <span className="hash-hint">#</span>
           <button className="primary-button" disabled={captureBusy} onClick={props.onAnalyze}>
             {props.busy === "analyze" ? "整理中..." : "AI 整理"}
           </button>
@@ -925,6 +999,7 @@ function WorkspaceView(props: {
               expanded={props.expandedMemoId === memo.id}
               editedMemo={props.editedMemo}
               todoEdits={props.todoEdits}
+              pendingTodoIds={props.pendingTodoIds}
               onOpen={() => props.onOpenMemo(memo)}
               onEditMemo={props.onEditMemo}
               onSaveMemo={() => props.onSaveMemo(memo)}
@@ -1008,6 +1083,7 @@ function MemoCard(props: {
   expanded: boolean;
   editedMemo: EditableMemo | null;
   todoEdits: Record<string, PendingTodoEdit>;
+  pendingTodoIds: string[];
   onOpen: () => void;
   onEditMemo: (memo: EditableMemo) => void;
   onSaveMemo: () => void;
@@ -1024,7 +1100,7 @@ function MemoCard(props: {
 }) {
   const editor = props.editedMemo;
   const editorTags = editor ? extractMemoTagsFromText(editor.title, editor.content) : props.memo.tags;
-  const memoBusy = Boolean(props.busy);
+  const memoBusy = isBusyInScope(props.busy, [`save-${props.memo.id}`, `archive-${props.memo.id}`, `reorder-${props.memo.id}`]);
 
   return (
     <article className={`memo-card ${props.expanded ? "expanded" : ""}`}>
@@ -1061,8 +1137,18 @@ function MemoCard(props: {
                 <Icon name="x" size={13} />
               </button>
             ))}
-            <input value={editor.newTag} onChange={(event) => props.onEditMemo({ ...editor, newTag: event.target.value })} placeholder="标签" />
-            <button className="ghost-button small" onClick={props.onAddTag}>
+            <input
+              value={editor.newTag}
+              onChange={(event) => props.onEditMemo({ ...editor, newTag: event.target.value })}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  props.onAddTag();
+                }
+              }}
+              placeholder="添加标签"
+            />
+            <button className="ghost-button small" type="button" disabled={!editor.newTag.trim()} onClick={props.onAddTag}>
               <Icon name="plus" />
               标签
             </button>
@@ -1071,6 +1157,7 @@ function MemoCard(props: {
             memo={props.memo}
             busy={props.busy}
             todoEdits={props.todoEdits}
+            pendingTodoIds={props.pendingTodoIds}
             newTodo={editor.newTodo}
             onNewTodoChange={(newTodo) => props.onEditMemo({ ...editor, newTodo })}
             onToggleTodo={props.onToggleTodo}
@@ -1094,7 +1181,7 @@ function MemoCard(props: {
         <>
           <TagStrip tags={props.memo.tags} />
           {props.memo.content ? <p className="memo-summary">{summarize(props.memo.content)}</p> : null}
-          <TodoList todos={props.memo.todos} onToggleTodo={props.onToggleTodo} />
+          <TodoList todos={props.memo.todos} pendingTodoIds={props.pendingTodoIds} onToggleTodo={props.onToggleTodo} />
         </>
       )}
     </article>
@@ -1105,6 +1192,7 @@ function TodoEditorList(props: {
   memo: Memo;
   busy: string;
   todoEdits: Record<string, PendingTodoEdit>;
+  pendingTodoIds: string[];
   newTodo: string;
   onNewTodoChange: (value: string) => void;
   onToggleTodo: (todo: MemoTodo) => void;
@@ -1114,14 +1202,15 @@ function TodoEditorList(props: {
   onAddTodo: () => void;
   onReorderTodo: (todoId: string, delta: -1 | 1) => void;
 }) {
-  const listBusy = Boolean(props.busy);
+  const listBusy = isBusyInScope(props.busy, [`todo-add-${props.memo.id}`]);
   return (
     <div className="todo-editor">
       {props.memo.todos.map((todo) => {
         const edit = props.todoEdits[todo.id] ?? { title: todo.title, notes: todo.notes ?? "" };
-        const todoBusy = Boolean(props.busy);
+        const todoPending = props.pendingTodoIds.includes(todo.id);
+        const todoBusy = todoPending || isBusyInScope(props.busy, [`todo-save-${todo.id}`, `todo-delete-${todo.id}`, `todo-reorder-${todo.id}`]);
         return (
-          <div key={todo.id} className="todo-edit-row">
+          <div key={todo.id} className={`todo-edit-row ${todoPending ? "is-syncing" : ""}`}>
             <button className={`checkbox ${todo.status === "done" ? "checked" : ""}`} disabled={todoBusy} onClick={() => props.onToggleTodo(todo)} aria-label="切换 Todo">
               {todo.status === "done" ? <Icon name="check" size={14} /> : null}
             </button>
@@ -1151,7 +1240,7 @@ function TodoEditorList(props: {
   );
 }
 
-function TodoList({ todos, onToggleTodo }: { todos: MemoTodo[]; onToggleTodo: (todo: MemoTodo) => void }) {
+function TodoList({ todos, pendingTodoIds = [], onToggleTodo }: { todos: MemoTodo[]; pendingTodoIds?: string[]; onToggleTodo: (todo: MemoTodo) => void }) {
   if (!todos.length) {
     return null;
   }
@@ -1160,7 +1249,7 @@ function TodoList({ todos, onToggleTodo }: { todos: MemoTodo[]; onToggleTodo: (t
     <ul className="todo-list">
       {todos.map((todo) => (
         <li key={todo.id}>
-          <button className={`checkbox ${todo.status === "done" ? "checked" : ""}`} onClick={() => onToggleTodo(todo)} aria-label="切换 Todo">
+          <button className={`checkbox ${todo.status === "done" ? "checked" : ""}`} disabled={pendingTodoIds.includes(todo.id)} onClick={() => onToggleTodo(todo)} aria-label="切换 Todo">
             {todo.status === "done" ? <Icon name="check" size={14} /> : null}
           </button>
           <span>{todo.title}</span>
@@ -1524,13 +1613,6 @@ function authButton(mode: AuthMode): string {
     verify: "验证",
     forgot: "发送重置邮件"
   }[mode];
-}
-
-function replaceOrRemoveMemo(items: Memo[], nextMemo: Memo): Memo[] {
-  if (nextMemo.status !== "active" || nextMemo.deletedAt !== null) {
-    return items.filter((item) => item.id !== nextMemo.id);
-  }
-  return items.map((item) => (item.id === nextMemo.id ? nextMemo : item));
 }
 
 function updateTodoInMemoList(items: Memo[], nextTodo: MemoTodo): Memo[] {

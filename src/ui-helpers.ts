@@ -26,14 +26,15 @@ interface QuickRecordKeyEvent {
 }
 
 export function addMemoTextTag(text: MemoText, tag: string): MemoText {
-  const normalized = normalizeMemoTag(tag);
+  const tagText = tag.trim().replace(/^#+/, "").trim();
+  const normalized = normalizeMemoTag(tagText);
   if (!normalized || memoTextHasTag(text, normalized)) {
     return text;
   }
 
   return {
     ...text,
-    content: `${text.content.trimEnd()} #${tag.trim()}`.trimStart()
+    content: `${text.content.trimEnd()} #${tagText}`.trimStart()
   };
 }
 
@@ -98,6 +99,22 @@ export function toggleTodoInMemoList(memos: Memo[], todoId: string, now: string)
       )
     };
   });
+}
+
+export function replaceOrRemoveMemoFromActiveList(items: Memo[], nextMemo: Memo): Memo[] {
+  if (nextMemo.status !== "active" || nextMemo.deletedAt !== null) {
+    return items.filter((item) => item.id !== nextMemo.id);
+  }
+  return items.map((item) => (item.id === nextMemo.id ? nextMemo : item));
+}
+
+export function upsertHistoryMemo(items: Memo[], nextMemo: Memo): Memo[] {
+  if (nextMemo.status !== "history" || nextMemo.deletedAt !== null) {
+    return items;
+  }
+  return [nextMemo, ...items.filter((item) => item.id !== nextMemo.id)].sort((a, b) =>
+    (b.historyAt ?? b.updatedAt).localeCompare(a.historyAt ?? a.updatedAt)
+  );
 }
 
 export function moveIdByDelta(ids: string[], id: string, delta: -1 | 1): string[] {

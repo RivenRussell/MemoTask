@@ -388,8 +388,27 @@ button.tag-chip {
   margin-top: 10px;
 }
 
+.capture-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.draft-tag-input {
+  min-width: min(280px, 100%);
+  display: inline-grid;
+  grid-template-columns: auto minmax(96px, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.draft-tag-input input {
+  height: 34px;
+}
+
 .hash-hint {
-  flex: 1;
   color: #667085;
   font-size: 24px;
 }
@@ -1014,6 +1033,14 @@ button.checkbox {
     align-items: end;
   }
 
+  .capture-tags {
+    gap: 10px;
+  }
+
+  .draft-tag-input {
+    width: 100%;
+  }
+
   .hash-hint {
     font-size: 30px;
   }
@@ -1126,10 +1153,6 @@ button.checkbox {
   .capture-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
-  }
-
-  .hash-hint {
-    grid-column: 1 / -1;
   }
 
   .primary-button,

@@ -10,7 +10,9 @@ import {
   isBusyInScope,
   moveIdByDelta,
   removeMemoTextTag,
-  toggleTodoInMemoList
+  replaceOrRemoveMemoFromActiveList,
+  toggleTodoInMemoList,
+  upsertHistoryMemo
 } from "../src/ui-helpers";
 
 function memo(overrides: Partial<Memo>): Memo {
@@ -44,6 +46,7 @@ describe("UI helper contract behavior", () => {
     expect(result.title).toBe("部署计划 #Deploy");
     expect(result.content).toBe("整理 Cloudflare 部署 #cloudflare");
     expect(addMemoTextTag(result, "deploy")).toEqual(result);
+    expect(addMemoTextTag(result, "#release").content).toBe("整理 Cloudflare 部署 #cloudflare #release");
   });
 
   it("removes matching tag tokens from title and content by normalized name", () => {
@@ -98,6 +101,29 @@ describe("UI helper contract behavior", () => {
     expect(toggled[0].todos[0].status).toBe("done");
     expect(toggled[0].todos[0].completedAt).toBe("2026-06-28T08:00:00.000Z");
     expect(memos[0].todos[0].status).toBe("todo");
+  });
+
+  it("removes a memo from the active list when the server returns it as history", () => {
+    const activeMemo = memo({ id: "memo-1", title: "PWA跨平台研究与开发" });
+    const archivedMemo = memo({
+      ...activeMemo,
+      status: "history",
+      historyReason: "completed",
+      historyAt: "2026-06-28T08:00:00.000Z"
+    });
+
+    expect(replaceOrRemoveMemoFromActiveList([activeMemo], archivedMemo)).toEqual([]);
+  });
+
+  it("upserts a completed memo into the history list without duplicating it", () => {
+    const older = memo({ id: "memo-2", title: "旧历史", status: "history", historyReason: "archived", historyAt: "2026-06-27T08:00:00.000Z" });
+    const completed = memo({ id: "memo-1", title: "完成历史", status: "history", historyReason: "completed", historyAt: "2026-06-28T08:00:00.000Z" });
+
+    const first = upsertHistoryMemo([older], completed);
+    const second = upsertHistoryMemo(first, { ...completed, title: "完成历史更新" });
+
+    expect(first.map((item) => item.id)).toEqual(["memo-1", "memo-2"]);
+    expect(second.map((item) => item.title)).toEqual(["完成历史更新", "旧历史"]);
   });
 
   it("moves memo ids by one step for lightweight reorder controls", () => {
