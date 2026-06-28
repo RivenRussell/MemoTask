@@ -29,6 +29,10 @@ function getNow(options?: ApiOptions): string {
   return options?.now?.() ?? new Date().toISOString();
 }
 
+async function markSyncSuccess(repository: MemoRepository, userId: string, now: string): Promise<void> {
+  await repository.markSyncSuccess(userId, now);
+}
+
 async function readJson<T>(context: { req: { json: () => Promise<T> } }): Promise<T> {
   return context.req.json();
 }
@@ -386,7 +390,9 @@ export function createApi(options: ApiOptions = {}) {
       return context.json({ error: { code: "VALIDATION_FAILED", message: "请输入 Memo 内容" } }, 400);
     }
 
-    const draft = await repository.createDraft(userId, { title: body.title, content: body.content }, getNow(options));
+    const now = getNow(options);
+    const draft = await repository.createDraft(userId, { title: body.title, content: body.content }, now);
+    await markSyncSuccess(repository, userId, now);
     return context.json({ draft }, 201);
   });
 
@@ -407,11 +413,13 @@ export function createApi(options: ApiOptions = {}) {
       return context.json({ error: { code: "VALIDATION_FAILED", message: "请输入 Memo 内容" } }, 400);
     }
 
-    const draft = await repository.updateDraft(userId, context.req.param("id"), { title: body.title, content: body.content }, getNow(options));
+    const now = getNow(options);
+    const draft = await repository.updateDraft(userId, context.req.param("id"), { title: body.title, content: body.content }, now);
     if (!draft) {
       return context.json({ error: { code: "NOT_FOUND", message: "草稿不存在" } }, 404);
     }
 
+    await markSyncSuccess(repository, userId, now);
     return context.json({ draft });
   });
 
@@ -429,6 +437,7 @@ export function createApi(options: ApiOptions = {}) {
       return context.json({ error: { code: "VALIDATION_FAILED", message: "请输入 Memo 内容" } }, 400);
     }
 
+    const now = getNow(options);
     const memo = await repository.publishMemo(
       userId,
       {
@@ -443,9 +452,10 @@ export function createApi(options: ApiOptions = {}) {
             generatedByAi: todo.generatedByAi
           }))
       },
-      getNow(options)
+      now
     );
 
+    await markSyncSuccess(repository, userId, now);
     return context.json({ memo }, 201);
   });
 
@@ -504,6 +514,7 @@ export function createApi(options: ApiOptions = {}) {
         ? moveMemoToHistory(nextMemo, "completed", now)
         : nextMemo
     );
+    await markSyncSuccess(repository, userId, now);
     return context.json({ memo: updated });
   });
 
@@ -516,7 +527,9 @@ export function createApi(options: ApiOptions = {}) {
       return context.json({ error: { code: "NOT_FOUND", message: "Memo 不存在" } }, 404);
     }
 
-    const archived = await repository.saveMemo(userId, moveMemoToHistory(memo, "archived", getNow(options)));
+    const now = getNow(options);
+    const archived = await repository.saveMemo(userId, moveMemoToHistory(memo, "archived", now));
+    await markSyncSuccess(repository, userId, now);
     return context.json({ memo: archived });
   });
 
@@ -529,7 +542,9 @@ export function createApi(options: ApiOptions = {}) {
       return context.json({ error: { code: "NOT_FOUND", message: "Memo 不存在" } }, 404);
     }
 
-    const restored = await repository.saveMemo(userId, restoreMemoFromHistory(memo, getNow(options)));
+    const now = getNow(options);
+    const restored = await repository.saveMemo(userId, restoreMemoFromHistory(memo, now));
+    await markSyncSuccess(repository, userId, now);
     return context.json({ memo: restored });
   });
 
@@ -542,7 +557,9 @@ export function createApi(options: ApiOptions = {}) {
       return context.json({ error: { code: "VALIDATION_FAILED", message: "排序数据无效" } }, 400);
     }
 
-    const memos = await repository.reorderMemos(userId, body.memoIds, getNow(options));
+    const now = getNow(options);
+    const memos = await repository.reorderMemos(userId, body.memoIds, now);
+    await markSyncSuccess(repository, userId, now);
     return context.json({ memos });
   });
 
@@ -571,6 +588,7 @@ export function createApi(options: ApiOptions = {}) {
       );
     }
 
+    await markSyncSuccess(repository, userId, now);
     return context.json({ todo: updatedTodo, memo: updatedMemo });
   });
 
@@ -588,12 +606,14 @@ export function createApi(options: ApiOptions = {}) {
       return context.json({ error: { code: "VALIDATION_FAILED", message: "请输入 Todo 内容" } }, 400);
     }
 
+    const now = getNow(options);
     const todo = await repository.createTodo(
       userId,
       memo.id,
       { title: body.title, notes: body.notes ?? null, generatedByAi: body.generatedByAi },
-      getNow(options)
+      now
     );
+    await markSyncSuccess(repository, userId, now);
     return context.json({ todo }, 201);
   });
 
@@ -623,6 +643,7 @@ export function createApi(options: ApiOptions = {}) {
         updatedAt: now
       });
     }
+    await markSyncSuccess(repository, userId, now);
     return context.json({ todo: updated });
   });
 
@@ -630,11 +651,13 @@ export function createApi(options: ApiOptions = {}) {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
     const userId = auth.user?.id ?? "default";
-    const deleted = await repository.deleteTodo(userId, context.req.param("id"), getNow(options));
+    const now = getNow(options);
+    const deleted = await repository.deleteTodo(userId, context.req.param("id"), now);
     if (!deleted) {
       return context.json({ error: { code: "NOT_FOUND", message: "Todo 不存在" } }, 404);
     }
 
+    await markSyncSuccess(repository, userId, now);
     return context.json({ todo: deleted });
   });
 
@@ -647,7 +670,9 @@ export function createApi(options: ApiOptions = {}) {
       return context.json({ error: { code: "VALIDATION_FAILED", message: "排序数据无效" } }, 400);
     }
 
-    const todos = await repository.reorderTodos(userId, body.memoId, body.todoIds, getNow(options));
+    const now = getNow(options);
+    const todos = await repository.reorderTodos(userId, body.memoId, body.todoIds, now);
+    await markSyncSuccess(repository, userId, now);
     return context.json({ todos });
   });
 
@@ -685,6 +710,7 @@ export function createApi(options: ApiOptions = {}) {
       expiresAt: new Date(Date.parse(now) + 1000 * 60 * 5).toISOString()
     };
     undoOperations.set(operation.id, { memoIds: operation.memoIds, expiresAt: operation.expiresAt });
+    await markSyncSuccess(repository, userId, now);
     return context.json({ operation, deletedCount: deleted.length });
   });
 
@@ -698,8 +724,10 @@ export function createApi(options: ApiOptions = {}) {
       return context.json({ error: { code: "NOT_FOUND", message: "撤销操作不存在" } }, 404);
     }
 
-    const restored = await repository.restoreDeletedMemos(userId, operation.memoIds, getNow(options));
+    const now = getNow(options);
+    const restored = await repository.restoreDeletedMemos(userId, operation.memoIds, now);
     undoOperations.delete(body.operationId ?? "");
+    await markSyncSuccess(repository, userId, now);
     return context.json({ restored });
   });
 
@@ -759,6 +787,7 @@ export function createApi(options: ApiOptions = {}) {
       },
       getNow(options)
     );
+    await markSyncSuccess(repository, userId, settings.updatedAt);
     return context.json({ settings: publicAiSettings(settings) });
   });
 
@@ -766,7 +795,9 @@ export function createApi(options: ApiOptions = {}) {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
     const userId = auth.user?.id ?? "default";
-    const settings = await repository.resetAiPrompt(userId, DEFAULT_PROMPT, getNow(options));
+    const now = getNow(options);
+    const settings = await repository.resetAiPrompt(userId, DEFAULT_PROMPT, now);
+    await markSyncSuccess(repository, userId, now);
     return context.json({ settings: publicAiSettings(settings) });
   });
 
@@ -805,15 +836,33 @@ export function createApi(options: ApiOptions = {}) {
     if (auth.response) return auth.response;
     const userId = auth.user?.id ?? "default";
     const body = await readJson<{ draftId?: string }>(context);
-    const settings = await repository.getAiSettings(userId, getNow(options));
-    if (!settings.baseUrl || !settings.model || !settings.encryptedApiKey) {
-      return context.json({ error: { code: "AI_UNAVAILABLE", message: AI_SETTINGS_REQUIRED_MESSAGE } }, 400);
-    }
-
     const draft = body.draftId ? await repository.findMemo(userId, body.draftId) : null;
     if (!draft || draft.status !== "draft") {
       return context.json({ error: { code: "NOT_FOUND", message: "草稿不存在" } }, 404);
     }
+
+    const now = getNow(options);
+    const settings = await repository.getAiSettings(userId, now);
+    if (!settings.baseUrl || !settings.model || !settings.encryptedApiKey) {
+      await repository.saveMemo(userId, {
+        ...draft,
+        aiState: "unavailable",
+        aiError: AI_SETTINGS_REQUIRED_MESSAGE,
+        aiResult: null,
+        updatedAt: now
+      });
+      await markSyncSuccess(repository, userId, now);
+      return context.json({ error: { code: "AI_UNAVAILABLE", message: AI_SETTINGS_REQUIRED_MESSAGE } }, 400);
+    }
+
+    await repository.saveMemo(userId, {
+      ...draft,
+      aiState: "analyzing",
+      aiError: null,
+      aiResult: null,
+      updatedAt: now
+    });
+    await markSyncSuccess(repository, userId, now);
 
     const apiKey = await getPlainApiKey(settings, options);
     const fetchAi = options.fetchAi ?? fetch;
@@ -835,14 +884,41 @@ export function createApi(options: ApiOptions = {}) {
     );
 
     if (!response.ok) {
+      const failedAt = getNow(options);
+      await repository.saveMemo(userId, {
+        ...draft,
+        aiState: "failed",
+        aiError: "AI 分析失败",
+        aiResult: null,
+        updatedAt: failedAt
+      });
+      await markSyncSuccess(repository, userId, failedAt);
       return context.json({ error: { code: "AI_FAILED", message: "AI 分析失败" } }, 502);
     }
 
     try {
       const payload = await response.json();
       const result = parseAiJson(extractAiContent(payload));
+      const doneAt = getNow(options);
+      await repository.saveMemo(userId, {
+        ...draft,
+        aiState: "done",
+        aiError: null,
+        aiResult: result,
+        updatedAt: doneAt
+      });
+      await markSyncSuccess(repository, userId, doneAt);
       return context.json({ result });
     } catch {
+      const failedAt = getNow(options);
+      await repository.saveMemo(userId, {
+        ...draft,
+        aiState: "failed",
+        aiError: "AI 返回格式无效",
+        aiResult: null,
+        updatedAt: failedAt
+      });
+      await markSyncSuccess(repository, userId, failedAt);
       return context.json({ error: { code: "AI_INVALID_JSON", message: "AI 返回格式无效" } }, 502);
     }
   });

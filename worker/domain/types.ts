@@ -3,6 +3,14 @@ export type MemoHistoryReason = "completed" | "archived";
 export type TodoStatus = "todo" | "done";
 export type AiState = "idle" | "analyzing" | "done" | "failed" | "unavailable";
 
+export interface MemoAiResult {
+  title: string;
+  todos: Array<{
+    title: string;
+    notes: string | null;
+  }>;
+}
+
 export interface MemoTodo {
   id: string;
   memoId: string;
@@ -29,6 +37,7 @@ export interface Memo {
   autoArchiveSuppressedUntilChange: boolean;
   aiState: AiState;
   aiError: string | null;
+  aiResult: MemoAiResult | null;
   createdAt: string;
   updatedAt: string;
   publishedAt: string | null;

@@ -5,12 +5,23 @@
 ## 当前版本
 
 ```text
-版本号：v4.2.4
+版本号：v5.0.1
 分支：codex/v2-auth
-标签：v4.2.4
+标签：未创建
 ```
 
-v4.2.4 完成 Markdown checkbox 与结构化 Todo 同步阶段。带有 `<!-- memotask:todo=TODO_ID -->` 标记的 Markdown task 会与对应 Todo 同步标题和完成状态；未绑定的 Markdown checkbox 仍然只是正文内容。
+v5.0.1 是本地待发布修复版本，尚未上传或部署到 Cloudflare。当前线上用户仍使用既有部署版本。
+
+v5.0.1 主要变化：
+
+- 草稿的 AI 整理状态和最近一次整理结果保存到数据库，PC 与 Android 重新拉取后能看到同一份 AI 信息。
+- `memo_tags` 补充 `user_id` 归属字段，并增加按用户和标准化标签查询的索引。
+- Memo、Todo、历史、AI 设置和 Prompt 写操作成功后更新 `sync_meta.last_success_at`。
+- D1 草稿清理逻辑限定当前账号，避免多用户草稿互相影响。
+- PC 端增加刷新按钮，Android 端增加顶栏刷新按钮和下拉刷新手势。
+- 新增 `migrations/0005_sync_ai_metadata.sql`，发布前必须先确认远端 D1 迁移计划。
+
+v5.0.1 没有执行 `npm run worker:deploy`，也没有执行 `npm run db:migrate:remote`。
 
 2026-06-27 起，旧版混合前端 UI 已退役并清理。后续前端实现以 [UI 功能与边界设计契约](UI/memotask-ui-design-contract.md) 为准。
 
@@ -31,6 +42,7 @@ v4.2.4 完成 Markdown checkbox 与结构化 Todo 同步阶段。带有 `<!-- me
 | `v4.2.0` | Git 标签 | 标签与搜索 |
 | `v4.2.3` | Git 标签 | Markdown 渲染 |
 | `v4.2.4` | Git 标签 | Markdown checkbox 与结构化 Todo 同步 |
+| `v5.0.1` | 本地版本 | 同步链路、AI 整理结果持久化和刷新入口修复；未创建标签，未部署 Cloudflare |
 
 ## v4 规划版本点
 

@@ -220,6 +220,16 @@ textarea:focus {
   grid-row: 5;
 }
 
+.is-spinning .icon {
+  animation: spin-refresh 0.8s linear infinite;
+}
+
+@keyframes spin-refresh {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .sidebar {
   min-height: 100vh;
   padding: 28px 22px;
@@ -858,11 +868,19 @@ button.checkbox {
 
   .mobile-topbar strong {
     font-size: 24px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .mobile-top-actions {
     display: flex;
-    gap: 10px;
+    gap: 8px;
+  }
+
+  .mobile-top-actions .icon-button {
+    width: 38px;
+    height: 38px;
   }
 
   .mobile-nav {

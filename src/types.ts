@@ -29,6 +29,7 @@ export interface Memo {
   autoArchiveSuppressedUntilChange: boolean;
   aiState: AiState;
   aiError: string | null;
+  aiResult: AnalyzeDraftResult | null;
   createdAt: string;
   updatedAt: string;
   publishedAt: string | null;

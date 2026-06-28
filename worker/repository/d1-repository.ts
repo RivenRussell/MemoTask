@@ -15,6 +15,7 @@ type MemoRow = {
   auto_archive_suppressed_until_change: number;
   ai_state: Memo["aiState"];
   ai_error: string | null;
+  ai_result_json?: string | null;
   created_at: string;
   updated_at: string;
   published_at: string | null;
@@ -38,6 +39,7 @@ type TodoRow = {
 
 type MemoTagRow = {
   memo_id: string;
+  user_id?: string | null;
   name: string;
   normalized_name: string;
   sort_order: number;
@@ -71,6 +73,7 @@ export class D1Repository implements MemoRepository {
       autoArchiveSuppressedUntilChange: false,
       aiState: "idle",
       aiError: null,
+      aiResult: null,
       createdAt: now,
       updatedAt: now,
       publishedAt: null,
@@ -95,12 +98,12 @@ export class D1Repository implements MemoRepository {
     await this.db
       .prepare(
         `UPDATE memos
-         SET title = ?, content = ?, updated_at = ?
+         SET title = ?, content = ?, ai_state = 'idle', ai_error = NULL, ai_result_json = NULL, updated_at = ?
          WHERE id = ? AND user_id = ? AND status = 'draft' AND deleted_at IS NULL`
       )
       .bind(title, input.content, now, draftId, userId)
       .run();
-    await this.syncMemoTags(draftId, extractMemoTagsFromText(title, input.content));
+    await this.syncMemoTags(userId, draftId, extractMemoTagsFromText(title, input.content));
     await this.trimDrafts(userId, 3);
     return this.findMemo(userId, draftId);
   }
@@ -121,6 +124,7 @@ export class D1Repository implements MemoRepository {
   async publishMemo(userId: string, input: PublishMemoInput, now: string): Promise<Memo> {
     const existing = input.draftId ? await this.findMemo(userId, input.draftId) : null;
     const nextSortOrder = await this.nextFrontSortOrder(userId);
+    const hasAiTodos = input.todos.some((todo) => todo.generatedByAi);
     const memo: Memo = {
       ...(existing ?? createEmptyMemo(userId, createId("memo"), now)),
       title: input.title.trim(),
@@ -128,6 +132,9 @@ export class D1Repository implements MemoRepository {
       status: "active",
       historyReason: null,
       sortOrder: nextSortOrder,
+      aiState: hasAiTodos ? "done" : "idle",
+      aiError: null,
+      aiResult: hasAiTodos ? existing?.aiResult ?? null : null,
       updatedAt: now,
       publishedAt: now,
       deletedAt: null,
@@ -368,7 +375,7 @@ export class D1Repository implements MemoRepository {
     if (memo.todos.length > 0) {
       await this.db.batch(memo.todos.map((todo) => this.todoStatement(todo)));
     }
-    await this.syncMemoTags(scopedMemo.id, scopedMemo.tags);
+    await this.syncMemoTags(userId, scopedMemo.id, scopedMemo.tags);
     return scopedMemo;
   }
 
@@ -489,6 +496,21 @@ export class D1Repository implements MemoRepository {
     };
   }
 
+  async markSyncSuccess(userId: string, now: string): Promise<SyncStatus> {
+    await this.db
+      .prepare(
+        `INSERT INTO sync_meta (id, last_success_at, last_error, updated_at)
+         VALUES (?, ?, NULL, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           last_success_at = excluded.last_success_at,
+           last_error = NULL,
+           updated_at = excluded.updated_at`
+      )
+      .bind(userId, now, now)
+      .run();
+    return { ok: true, lastSuccessAt: now, lastError: null, updatedAt: now };
+  }
+
   private async hydrateMemos(rows: MemoRow[]): Promise<Memo[]> {
     if (rows.length === 0) {
       return [];
@@ -580,6 +602,7 @@ export class D1Repository implements MemoRepository {
         `UPDATE memos
          SET status = 'deleted', deleted_at = updated_at
          WHERE status = 'draft'
+           AND user_id = ?
            AND id NOT IN (
              SELECT id FROM memos
              WHERE user_id = ? AND status = 'draft' AND deleted_at IS NULL
@@ -587,7 +610,7 @@ export class D1Repository implements MemoRepository {
              LIMIT ?
            )`
       )
-      .bind(userId, limit)
+      .bind(userId, userId, limit)
       .run();
   }
 
@@ -596,9 +619,9 @@ export class D1Repository implements MemoRepository {
       .prepare(
         `INSERT INTO memos (
           id, user_id, title, content, status, history_reason, sort_order, last_active_sort_order,
-          auto_archive_suppressed_until_change, ai_state, ai_error, created_at, updated_at,
+          auto_archive_suppressed_until_change, ai_state, ai_error, ai_result_json, created_at, updated_at,
           published_at, history_at, deleted_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           user_id = excluded.user_id,
           title = excluded.title,
@@ -610,6 +633,7 @@ export class D1Repository implements MemoRepository {
           auto_archive_suppressed_until_change = excluded.auto_archive_suppressed_until_change,
           ai_state = excluded.ai_state,
           ai_error = excluded.ai_error,
+          ai_result_json = excluded.ai_result_json,
           updated_at = excluded.updated_at,
           published_at = excluded.published_at,
           history_at = excluded.history_at,
@@ -627,6 +651,7 @@ export class D1Repository implements MemoRepository {
         memo.autoArchiveSuppressedUntilChange ? 1 : 0,
         memo.aiState,
         memo.aiError,
+        serializeAiResult(memo.aiResult),
         memo.createdAt,
         memo.updatedAt,
         memo.publishedAt,
@@ -636,7 +661,7 @@ export class D1Repository implements MemoRepository {
       .run();
   }
 
-  private async syncMemoTags(memoId: string, tags: string[]): Promise<void> {
+  private async syncMemoTags(userId: string, memoId: string, tags: string[]): Promise<void> {
     await this.db.prepare("DELETE FROM memo_tags WHERE memo_id = ?").bind(memoId).run();
     if (tags.length === 0) {
       return;
@@ -646,13 +671,14 @@ export class D1Repository implements MemoRepository {
       tags.map((tag, index) =>
         this.db
           .prepare(
-            `INSERT INTO memo_tags (memo_id, name, normalized_name, sort_order)
-             VALUES (?, ?, ?, ?)
+            `INSERT INTO memo_tags (memo_id, user_id, name, normalized_name, sort_order)
+             VALUES (?, ?, ?, ?, ?)
              ON CONFLICT(memo_id, normalized_name) DO UPDATE SET
+               user_id = excluded.user_id,
                name = excluded.name,
                sort_order = excluded.sort_order`
           )
-          .bind(memoId, tag, normalizeMemoTag(tag), index + 1)
+          .bind(memoId, userId, tag, normalizeMemoTag(tag), index + 1)
       )
     );
   }
@@ -738,6 +764,7 @@ function mapMemo(row: MemoRow): Memo {
     autoArchiveSuppressedUntilChange: row.auto_archive_suppressed_until_change === 1,
     aiState: row.ai_state,
     aiError: row.ai_error,
+    aiResult: parseAiResult(row.ai_result_json ?? null),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     publishedAt: row.published_at,
@@ -778,6 +805,31 @@ function mapAiSettings(row: AiSettingsRow): AiSettings {
   };
 }
 
+function parseAiResult(value: string | null): Memo["aiResult"] {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Memo["aiResult"];
+    if (!parsed || typeof parsed.title !== "string" || !Array.isArray(parsed.todos)) {
+      return null;
+    }
+    return {
+      title: parsed.title,
+      todos: parsed.todos
+        .filter((todo): todo is { title: string; notes: string | null } => Boolean(todo) && typeof todo.title === "string")
+        .map((todo) => ({ title: todo.title, notes: typeof todo.notes === "string" ? todo.notes : null }))
+    };
+  } catch {
+    return null;
+  }
+}
+
+function serializeAiResult(value: Memo["aiResult"]): string | null {
+  return value ? JSON.stringify(value) : null;
+}
+
 function groupTodos(todos: MemoTodo[]): Map<string, MemoTodo[]> {
   const byMemo = new Map<string, MemoTodo[]>();
   for (const todo of todos) {
@@ -807,6 +859,7 @@ function createEmptyMemo(userId: string, id: string, now: string): Memo {
     autoArchiveSuppressedUntilChange: false,
     aiState: "idle",
     aiError: null,
+    aiResult: null,
     createdAt: now,
     updatedAt: now,
     publishedAt: null,

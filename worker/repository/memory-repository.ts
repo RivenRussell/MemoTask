@@ -13,6 +13,12 @@ function createId(prefix: string): string {
 function cloneMemo(memo: Memo): Memo {
   return {
     ...memo,
+    aiResult: memo.aiResult
+      ? {
+          title: memo.aiResult.title,
+          todos: memo.aiResult.todos.map((todo) => ({ ...todo }))
+        }
+      : null,
     tags: [...memo.tags],
     todos: memo.todos.filter((todo) => todo.deletedAt === null).map((todo) => ({ ...todo }))
   };
@@ -36,6 +42,7 @@ export class MemoryRepository implements MemoRepository {
       autoArchiveSuppressedUntilChange: false,
       aiState: "idle",
       aiError: null,
+      aiResult: null,
       createdAt: now,
       updatedAt: now,
       publishedAt: null,
@@ -59,6 +66,9 @@ export class MemoryRepository implements MemoRepository {
     draft.title = input.title?.trim() || "未命名 Memo";
     draft.content = input.content;
     draft.tags = extractMemoTagsFromText(draft.title, draft.content);
+    draft.aiState = "idle";
+    draft.aiError = null;
+    draft.aiResult = null;
     draft.updatedAt = now;
     this.trimDrafts(userId, 3);
     return cloneMemo(draft);
@@ -93,11 +103,15 @@ export class MemoryRepository implements MemoRepository {
     });
 
     if (memo) {
+      const hasAiTodos = todos.some((todo) => todo.generatedByAi);
       Object.assign(memo, {
         title: input.title.trim(),
         content: input.content,
         status: "active",
         sortOrder: nextSortOrder,
+        aiState: hasAiTodos ? "done" : "idle",
+        aiError: null,
+        aiResult: hasAiTodos ? memo.aiResult : null,
         updatedAt: now,
         publishedAt: now,
         tags: extractMemoTagsFromText(input.title, input.content),
@@ -116,8 +130,9 @@ export class MemoryRepository implements MemoRepository {
       sortOrder: nextSortOrder,
       lastActiveSortOrder: null,
       autoArchiveSuppressedUntilChange: false,
-      aiState: "idle",
+      aiState: todos.some((todo) => todo.generatedByAi) ? "done" : "idle",
       aiError: null,
+      aiResult: null,
       createdAt: now,
       updatedAt: now,
       publishedAt: now,
@@ -397,6 +412,17 @@ export class MemoryRepository implements MemoRepository {
 
   async getSyncStatus(userId: string, now: string): Promise<SyncStatus> {
     const status = this.syncStatus.get(userId) ?? {
+      ok: true,
+      lastSuccessAt: now,
+      lastError: null,
+      updatedAt: now
+    };
+    this.syncStatus.set(userId, status);
+    return { ...status };
+  }
+
+  async markSyncSuccess(userId: string, now: string): Promise<SyncStatus> {
+    const status = {
       ok: true,
       lastSuccessAt: now,
       lastError: null,

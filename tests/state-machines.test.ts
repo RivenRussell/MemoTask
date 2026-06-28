@@ -22,6 +22,7 @@ function memo(overrides: Partial<Memo> = {}): Memo {
     autoArchiveSuppressedUntilChange: false,
     aiState: "idle",
     aiError: null,
+    aiResult: null,
     createdAt: "2026-06-22T10:00:00.000Z",
     updatedAt: "2026-06-22T10:00:00.000Z",
     publishedAt: "2026-06-22T10:00:00.000Z",

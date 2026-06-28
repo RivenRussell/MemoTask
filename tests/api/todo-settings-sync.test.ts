@@ -13,6 +13,22 @@ function createTestApi(fetchAi?: (request: Request) => Promise<Response>) {
   return { app, repository };
 }
 
+function createTimeTravelApi() {
+  const repository = new MemoryRepository();
+  let now = "2026-06-22T12:00:00.000Z";
+  const app = createApi({
+    repository,
+    now: () => now,
+    appEncryptionKey: "test-encryption-key-for-api"
+  });
+  return {
+    app,
+    setNow: (value: string) => {
+      now = value;
+    }
+  };
+}
+
 async function json(response: Response) {
   return response.json() as Promise<any>;
 }
@@ -95,5 +111,25 @@ describe("todo editing, AI test, and sync APIs", () => {
     expect(response.status).toBe(200);
     expect(body.status).toMatchObject({ ok: true, lastError: null });
     expect(JSON.stringify(body)).not.toContain("sk-");
+  });
+
+  it("advances sync status after a write so clients can tell fresh data was saved", async () => {
+    const { app, setNow } = createTimeTravelApi();
+
+    const initial = await json(await app.request("/api/sync/status"));
+    setNow("2026-06-22T12:05:00.000Z");
+    await app.request("/api/memos/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "同步推进", content: "写入后刷新状态 #sync", todos: [] })
+    });
+    const updated = await json(await app.request("/api/sync/status"));
+
+    expect(initial.status.lastSuccessAt).toBe("2026-06-22T12:00:00.000Z");
+    expect(updated.status).toMatchObject({
+      ok: true,
+      lastSuccessAt: "2026-06-22T12:05:00.000Z",
+      updatedAt: "2026-06-22T12:05:00.000Z"
+    });
   });
 });

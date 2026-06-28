@@ -191,6 +191,57 @@ describe("AI settings and analyze API", () => {
     ]);
   });
 
+  it("persists the latest AI result on the draft so another client can reload it", async () => {
+    const { app } = createTestApi(async () =>
+      Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: "跨端同步整理",
+                todos: [{ title: "在安卓端继续查看", notes: "来自 AI" }]
+              })
+            }
+          }
+        ]
+      })
+    );
+    await app.request("/api/ai/settings", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        baseUrl: "https://api.example.com/v1",
+        apiKey: "test-key-1234567890abcdef",
+        model: "dsv4-pro",
+        promptTemplate: "整理 Memo"
+      })
+    });
+    const draft = await json(
+      await app.request("/api/drafts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ content: "需要在 PC 和安卓之间同步 AI 整理结果" })
+      })
+    );
+
+    await app.request("/api/ai/analyze-draft", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ draftId: draft.draft.id })
+    });
+    const drafts = await json(await app.request("/api/drafts/recent"));
+
+    expect(drafts.drafts[0]).toMatchObject({
+      id: draft.draft.id,
+      aiState: "done",
+      aiError: null,
+      aiResult: {
+        title: "跨端同步整理",
+        todos: [{ title: "在安卓端继续查看", notes: "来自 AI" }]
+      }
+    });
+  });
+
   it("retries analyze up to three attempts before returning the editable draft result", async () => {
     let attempts = 0;
     const { app } = createTestApi(async () => {

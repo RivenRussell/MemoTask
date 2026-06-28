@@ -2,7 +2,7 @@
 
 MemoTask 是一个低压力的个人 Memo 待办整理工具。它的核心思路很简单：先把脑子里的想法、计划、链接、琐事写成一条 Memo，再让人工智能把这条 Memo 内部拆成可执行的待办项。用户不需要一开始就想清楚分类、日期和提醒，只需要先记录，再整理。
 
-当前版本为 **v5.0.0-cleanup**。后端、账号、Memo、Todo、历史、AI 设置、Markdown Todo 同步、Cloudflare 部署、Tauri 桌面壳和 Capacitor Android 壳保留。旧版混合前端 UI 已清理，后续前端将按新的 UI 设计契约重新实现。
+当前本地版本为 **v5.0.1**。本版本修复标签、AI 整理结果和同步状态的数据链路，并补充 PC 刷新按钮与 Android 下拉刷新入口。注意：v5.0.1 目前只在本地代码中完成，尚未上传或部署到 Cloudflare，避免影响现有线上用户访问。
 
 生产访问地址：
 
@@ -30,8 +30,9 @@ https://memotask.rrwks.cn/login
 - 使用 HttpOnly 会话 Cookie 保存登录态，降低前端脚本读取登录凭据的风险。
 - 所有 Memo 数据按用户隔离，不同账号互相不可见。
 - 每个用户拥有独立的人工智能接口设置、提示词和加密后的接口密钥。
+- AI 整理状态和最近一次整理结果会随草稿保存，PC 与 Android 重新拉取后保持一致。
 - 前端、后端和静态资源统一部署在同一个 Cloudflare Worker。
-- Cloudflare D1 保存账号、会话、Memo、待办、历史记录、草稿、撤销记录和同步状态。
+- Cloudflare D1 保存账号、会话、Memo、待办、标签、AI 设置、AI 整理结果、历史记录、草稿、撤销记录和同步状态。
 - Resend 负责发送注册验证和密码重置邮件。
 
 ## 产品理念
@@ -225,6 +226,9 @@ D1 迁移文件：
 ```text
 migrations/0001_initial.sql
 migrations/0002_auth.sql
+migrations/0003_clear_default_ai_key.sql
+migrations/0004_memo_tags.sql
+migrations/0005_sync_ai_metadata.sql
 ```
 
 主要数据表：
@@ -235,9 +239,17 @@ migrations/0002_auth.sql
 - `password_reset_tokens`
 - `memos`
 - `memo_todos`
+- `memo_tags`
 - `ai_settings`
 - `undo_operations`
 - `sync_meta`
+
+v5.0.1 数据结构整理：
+
+- `memos.ai_result_json` 保存草稿最近一次 AI 整理结果，避免两端只同步到草稿正文、同步不到整理结果。
+- `memo_tags.user_id` 给标签记录补上账号归属，便于直接按账号查询和排查数据。
+- 写入 Memo、Todo、AI 设置、Prompt、历史操作后会推进 `sync_meta.last_success_at`，让客户端能看到真实的最近同步时间。
+- 草稿清理 SQL 限定当前 `user_id`，避免多账号场景下误影响其他账号草稿。
 
 远程迁移命令：
 
@@ -306,6 +318,8 @@ npm run build
 ```bash
 npm run db:migrate:remote
 ```
+
+v5.0.1 尚未执行远程迁移或部署。发布前必须先确认线上 D1 可兼容 `migrations/0005_sync_ai_metadata.sql`，再按顺序执行远程迁移和 Worker 部署。
 
 部署 Worker 和静态资源：
 
@@ -406,7 +420,7 @@ POST /api/ai/analyze-draft
 当前整理版本：
 
 ```text
-v5.0.0-cleanup
+v5.0.1
 ```
 
 重要分支和标签：
@@ -421,6 +435,7 @@ v4.1.0                  Memos 式 UI 与时间线工作台
 v4.2.0                  标签与搜索
 v4.2.3                  Markdown 渲染
 v4.2.4                  Markdown checkbox 与结构化 Todo 同步
+v5.0.1                  同步链路、AI 整理结果持久化和刷新入口修复（本地待发布）
 ```
 
 查看版本历史：

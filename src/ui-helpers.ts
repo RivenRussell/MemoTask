@@ -10,6 +10,13 @@ const tagTokenPattern = /(^|\s)#([\p{L}\p{N}_-]+)/gu;
 
 export type QuickRecordShortcut = "focus" | "publish" | "analyze" | null;
 
+interface PullGesture {
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+}
+
 interface QuickRecordKeyEvent {
   key: string;
   ctrlKey: boolean;
@@ -120,6 +127,12 @@ export function getQuickRecordShortcut(event: QuickRecordKeyEvent): QuickRecordS
     return event.shiftKey ? "analyze" : "publish";
   }
   return null;
+}
+
+export function isPullRefreshGesture(gesture: PullGesture): boolean {
+  const deltaX = Math.abs(gesture.currentX - gesture.startX);
+  const deltaY = gesture.currentY - gesture.startY;
+  return deltaY >= 72 && deltaY > deltaX * 1.4;
 }
 
 function memoTextHasTag(text: MemoText, normalizedTag: string): boolean {

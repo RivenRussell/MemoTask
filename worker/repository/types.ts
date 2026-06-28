@@ -67,4 +67,5 @@ export interface MemoRepository {
   saveAiSettings(userId: string, input: AiSettingsInput, now: string): Promise<AiSettings>;
   resetAiPrompt(userId: string, promptTemplate: string, now: string): Promise<AiSettings>;
   getSyncStatus(userId: string, now: string): Promise<SyncStatus>;
+  markSyncSuccess(userId: string, now: string): Promise<SyncStatus>;
 }

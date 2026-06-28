@@ -146,6 +146,7 @@ describe("D1Repository", () => {
           auto_archive_suppressed_until_change: 0,
           ai_state: "idle",
           ai_error: null,
+          ai_result_json: "{\"title\":\"D1 AI\",\"todos\":[{\"title\":\"同步 AI 结果\",\"notes\":null}]}",
           created_at: "2026-06-22T12:00:00.000Z",
           updated_at: "2026-06-22T12:00:00.000Z",
           published_at: "2026-06-22T12:00:00.000Z",
@@ -177,6 +178,7 @@ describe("D1Repository", () => {
     expect(memos).toHaveLength(1);
     expect(memos[0].todos[0]).toMatchObject({ title: "保持原位置", status: "done", sortOrder: 1 });
     expect(memos[0].tags).toEqual(["Work"]);
+    expect((memos[0] as any).aiResult).toEqual({ title: "D1 AI", todos: [{ title: "同步 AI 结果", notes: null }] });
   });
 
   it("persists saved memo state through D1 update statements", async () => {
@@ -195,6 +197,7 @@ describe("D1Repository", () => {
         autoArchiveSuppressedUntilChange: false,
         aiState: "idle",
         aiError: null,
+        aiResult: null,
         createdAt: "2026-06-22T12:00:00.000Z",
         updatedAt: "2026-06-22T12:00:00.000Z",
         publishedAt: "2026-06-22T12:00:00.000Z",
@@ -211,9 +214,21 @@ describe("D1Repository", () => {
 
     expect(db.statements.some((statement) => statement.query.includes("INTO memos"))).toBe(true);
     expect(db.statements.some((statement) => statement.query.includes("INTO memo_tags"))).toBe(true);
+    expect(db.statements.find((statement) => statement.query.includes("INTO memo_tags"))?.values).toContain("default");
     expect(db.statements.flatMap((statement) => statement.values)).toContain("history");
     expect(db.statements.flatMap((statement) => statement.values)).toContain("archived");
     expect(db.statements.flatMap((statement) => statement.values)).toContain("archive");
+  });
+
+  it("trims draft rows only inside the current user scope", async () => {
+    const db = new CannedD1Database([], []);
+    const repository = new D1Repository(db as unknown as D1Database);
+
+    await repository.createDraft("default", { content: "用户自己的草稿" }, "2026-06-22T12:00:00.000Z");
+
+    const trimStatement = db.statements.find((statement) => statement.query.includes("LIMIT ?"));
+    expect(trimStatement?.query).toContain("WHERE user_id = ?");
+    expect(trimStatement?.values.filter((value) => value === "default")).toHaveLength(2);
   });
 
   it("stores AI settings with caller-provided ciphertext and no plaintext key", async () => {

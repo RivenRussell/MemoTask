@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { Memo } from "../src/types";
-import { addMemoTextTag, collectMemoTags, filterMemosByQuery, getQuickRecordShortcut, moveIdByDelta, removeMemoTextTag, toggleTodoInMemoList } from "../src/ui-helpers";
+import {
+  addMemoTextTag,
+  collectMemoTags,
+  filterMemosByQuery,
+  getQuickRecordShortcut,
+  isPullRefreshGesture,
+  moveIdByDelta,
+  removeMemoTextTag,
+  toggleTodoInMemoList
+} from "../src/ui-helpers";
 
 function memo(overrides: Partial<Memo>): Memo {
   return {
@@ -15,6 +24,7 @@ function memo(overrides: Partial<Memo>): Memo {
     autoArchiveSuppressedUntilChange: overrides.autoArchiveSuppressedUntilChange ?? false,
     aiState: overrides.aiState ?? "idle",
     aiError: overrides.aiError ?? null,
+    aiResult: overrides.aiResult ?? null,
     createdAt: overrides.createdAt ?? "2026-06-28T00:00:00.000Z",
     updatedAt: overrides.updatedAt ?? "2026-06-28T00:00:00.000Z",
     publishedAt: overrides.publishedAt ?? "2026-06-28T00:00:00.000Z",
@@ -104,5 +114,12 @@ describe("UI helper contract behavior", () => {
     expect(getQuickRecordShortcut({ key: "Enter", ctrlKey: false, metaKey: false, shiftKey: false })).toBeNull();
     expect(getQuickRecordShortcut({ key: "k", ctrlKey: false, metaKey: false, shiftKey: false })).toBeNull();
     expect(getQuickRecordShortcut({ key: "x", ctrlKey: true, metaKey: false, shiftKey: false })).toBeNull();
+  });
+
+  it("recognizes only deliberate downward pull gestures for mobile refresh", () => {
+    expect(isPullRefreshGesture({ startX: 120, startY: 16, currentX: 126, currentY: 96 })).toBe(true);
+    expect(isPullRefreshGesture({ startX: 120, startY: 16, currentX: 126, currentY: 70 })).toBe(false);
+    expect(isPullRefreshGesture({ startX: 120, startY: 90, currentX: 124, currentY: 16 })).toBe(false);
+    expect(isPullRefreshGesture({ startX: 120, startY: 16, currentX: 230, currentY: 96 })).toBe(false);
   });
 });

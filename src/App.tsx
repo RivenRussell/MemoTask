@@ -1,10 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent, KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
+import type { FormEvent, KeyboardEvent as ReactKeyboardEvent, RefObject, TouchEvent as ReactTouchEvent } from "react";
 import { apiClient } from "./api/client";
 import { extractMemoTagsFromText } from "./shared/memo-tags";
 import type { AiSettingsView, AnalyzeDraftResult, AuthUserView, Memo, MemoTodo, SyncStatusView } from "./types";
 import { Icon } from "./ui-icons";
-import { addMemoTextTag, collectMemoTags, filterMemosByQuery, getQuickRecordShortcut, moveIdByDelta, removeMemoTextTag, toggleTodoInMemoList } from "./ui-helpers";
+import {
+  addMemoTextTag,
+  collectMemoTags,
+  filterMemosByQuery,
+  getQuickRecordShortcut,
+  isPullRefreshGesture,
+  moveIdByDelta,
+  removeMemoTextTag,
+  toggleTodoInMemoList
+} from "./ui-helpers";
 
 type View = "workspace" | "history" | "account";
 type AiPanelState = "idle" | "analyzing" | "done" | "failed" | "applied";
@@ -69,7 +78,9 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
   const captureTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const pullStartRef = useRef<{ x: number; y: number } | null>(null);
   const canHideToTray = typeof window !== "undefined" && Boolean(window.memotaskDesktop?.hideToTray);
 
   useEffect(() => {
@@ -145,6 +156,25 @@ export default function App() {
       setDrafts(nextDrafts);
     } catch (requestError) {
       setError(errorMessage(requestError));
+    }
+  }
+
+  async function refreshCurrentView(showMessage = false) {
+    setRefreshing(true);
+    setError("");
+    try {
+      if (view === "history") {
+        await Promise.all([refreshHistory(), refreshWorkspace(), refreshSettings()]);
+      } else if (view === "account") {
+        await Promise.all([refreshSettings(), refreshWorkspace()]);
+      } else {
+        await Promise.all([refreshWorkspace(), refreshSettings()]);
+      }
+      if (showMessage) {
+        setMessage("已刷新");
+      }
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -242,8 +272,30 @@ export default function App() {
       setAiResult(null);
       setAiState("idle");
       setMemos((items) => [published, ...items.filter((item) => item.id !== published.id)]);
+      await Promise.all([refreshWorkspace(), refreshSettings()]);
       setMessage("Memo 已发布");
     });
+  }
+
+  function handleTouchStart(event: ReactTouchEvent<HTMLDivElement>) {
+    if (window.scrollY > 0 || refreshing) {
+      pullStartRef.current = null;
+      return;
+    }
+    const touch = event.touches[0];
+    pullStartRef.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+  }
+
+  function handleTouchEnd(event: ReactTouchEvent<HTMLDivElement>) {
+    const start = pullStartRef.current;
+    const touch = event.changedTouches[0];
+    pullStartRef.current = null;
+    if (!start || !touch) {
+      return;
+    }
+    if (isPullRefreshGesture({ startX: start.x, startY: start.y, currentX: touch.clientX, currentY: touch.clientY })) {
+      void refreshCurrentView(true);
+    }
   }
 
   function focusQuickRecord() {
@@ -290,6 +342,7 @@ export default function App() {
       const updated = await apiClient.updateMemo(memo.id, { title: editedMemo.title, content: editedMemo.content });
       setMemos((items) => replaceOrRemoveMemo(items, updated));
       setExpandedMemoId(updated.status === "active" ? updated.id : null);
+      await Promise.all([refreshWorkspace(), refreshHistory(), refreshSettings()]);
       setMessage("Memo 已保存");
     });
   }
@@ -320,6 +373,7 @@ export default function App() {
       } else {
         await refreshWorkspace();
       }
+      await Promise.all([refreshHistory(), refreshSettings()]);
     });
   }
 
@@ -332,6 +386,7 @@ export default function App() {
     await withBusy(`todo-save-${todo.id}`, async () => {
       const updated = await apiClient.updateTodo(todo.id, { title: edit.title, notes: edit.notes.trim() || null });
       setMemos((items) => updateTodoInMemoList(items, updated));
+      await refreshSettings();
       setMessage("Todo 已保存");
     });
   }
@@ -346,6 +401,7 @@ export default function App() {
     await withBusy(`todo-add-${memo.id}`, async () => {
       const created = await apiClient.createTodo(memo.id, { title: optimisticTodo.title, generatedByAi: false });
       setMemos((items) => appendTodoToMemoList(removeTodoFromMemoList(items, optimisticTodo.id), memo.id, created));
+      await refreshSettings();
     });
   }
 
@@ -353,6 +409,7 @@ export default function App() {
     setMemos((items) => removeTodoFromMemoList(items, todoId));
     await withBusy(`todo-delete-${todoId}`, async () => {
       await apiClient.deleteTodo(todoId);
+      await refreshSettings();
     });
   }
 
@@ -366,6 +423,7 @@ export default function App() {
     await withBusy(`reorder-${memoId}`, async () => {
       const reordered = await apiClient.reorderMemos(nextIds);
       setMemos(reordered);
+      await refreshSettings();
     });
   }
 
@@ -378,6 +436,7 @@ export default function App() {
     await withBusy(`todo-reorder-${todoId}`, async () => {
       const todos = await apiClient.reorderTodos(memo.id, nextIds);
       setMemos((items) => replaceMemoTodos(items, memo.id, todos));
+      await refreshSettings();
     });
   }
 
@@ -390,7 +449,7 @@ export default function App() {
     await withBusy(`archive-${memoId}`, async () => {
       const archived = await apiClient.archiveMemo(memoId);
       setMemos((items) => replaceOrRemoveMemo(items, archived));
-      await refreshHistory();
+      await Promise.all([refreshHistory(), refreshSettings()]);
       setMessage("Memo 已归档");
     });
   }
@@ -398,8 +457,7 @@ export default function App() {
   async function restoreMemo(memoId: string) {
     await withBusy(`restore-${memoId}`, async () => {
       await apiClient.restoreMemo(memoId);
-      await refreshHistory();
-      await refreshWorkspace();
+      await Promise.all([refreshHistory(), refreshWorkspace(), refreshSettings()]);
       setMessage("Memo 已恢复");
     });
   }
@@ -407,7 +465,7 @@ export default function App() {
   async function deleteHistoryMemo(memoId: string) {
     await withBusy(`delete-history-${memoId}`, async () => {
       const result = await apiClient.bulkDeleteHistory([memoId]);
-      await refreshHistory();
+      await Promise.all([refreshHistory(), refreshSettings()]);
       setMessage(`已删除 1 条历史记录，可撤销：${result.operation.id}`);
     });
   }
@@ -417,6 +475,7 @@ export default function App() {
       const settings = await apiClient.saveAiSettings(settingsForm);
       setAiSettings(settings);
       setSettingsForm({ baseUrl: settings.baseUrl, model: settings.model, apiKey: "", promptTemplate: settings.promptTemplate });
+      await refreshSettings();
       setMessage("设置已保存");
     });
   }
@@ -426,6 +485,7 @@ export default function App() {
       const settings = await apiClient.resetAiPrompt();
       setAiSettings(settings);
       setSettingsForm({ baseUrl: settings.baseUrl, model: settings.model, apiKey: "", promptTemplate: settings.promptTemplate });
+      await refreshSettings();
       setMessage("Prompt 已恢复默认");
     });
   }
@@ -480,11 +540,13 @@ export default function App() {
   }
 
   return (
-    <div className={`app-shell view-${view}`}>
+    <div className={`app-shell view-${view}`} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
       <DesktopRail
         view={view}
         canHideToTray={canHideToTray}
+        refreshing={refreshing}
         onViewChange={setView}
+        onRefresh={() => void refreshCurrentView(true)}
         onHideToTray={hideToTray}
         onOpenSettings={() => setSettingsOpen(true)}
       />
@@ -565,7 +627,7 @@ export default function App() {
           />
         ) : null}
       </main>
-      <MobileTopbar view={view} onViewChange={setView} onOpenFilter={() => setFilterSheetOpen(true)} />
+      <MobileTopbar view={view} refreshing={refreshing} onViewChange={setView} onRefresh={() => void refreshCurrentView(true)} onOpenFilter={() => setFilterSheetOpen(true)} />
       <MobileNav view={view} onViewChange={setView} />
       {filterSheetOpen ? (
         <FilterSheet
@@ -682,13 +744,17 @@ function AuthScreen({ onAuthed }: { onAuthed: (user: AuthUserView) => void }) {
 function DesktopRail({
   view,
   canHideToTray,
+  refreshing,
   onViewChange,
+  onRefresh,
   onHideToTray,
   onOpenSettings
 }: {
   view: View;
   canHideToTray: boolean;
+  refreshing: boolean;
   onViewChange: (view: View) => void;
+  onRefresh: () => void;
   onHideToTray: () => void;
   onOpenSettings: () => void;
 }) {
@@ -700,6 +766,9 @@ function DesktopRail({
       </button>
       <button className={view === "history" ? "active" : ""} onClick={() => onViewChange("history")} aria-label="历史" title="历史">
         <Icon name="history" />
+      </button>
+      <button className={refreshing ? "is-spinning" : ""} disabled={refreshing} onClick={onRefresh} aria-label="刷新" title="刷新">
+        <Icon name="refresh" />
       </button>
       {canHideToTray ? (
         <button onClick={onHideToTray} aria-label="隐藏到托盘" title="隐藏到托盘">
@@ -1221,12 +1290,27 @@ function SettingsContent(props: SettingsProps) {
   );
 }
 
-function MobileTopbar({ view, onViewChange, onOpenFilter }: { view: View; onViewChange: (view: View) => void; onOpenFilter: () => void }) {
+function MobileTopbar({
+  view,
+  refreshing,
+  onViewChange,
+  onRefresh,
+  onOpenFilter
+}: {
+  view: View;
+  refreshing: boolean;
+  onViewChange: (view: View) => void;
+  onRefresh: () => void;
+  onOpenFilter: () => void;
+}) {
   return (
     <header className="mobile-topbar">
       <button className="brand-mark" onClick={() => onViewChange("workspace")}>M</button>
       <strong>{view === "history" ? "历史记录" : view === "account" ? "账号" : "MemoTask"}</strong>
       <div className="mobile-top-actions">
+        <button className={`icon-button ${refreshing ? "is-spinning" : ""}`} disabled={refreshing} onClick={onRefresh} aria-label="刷新">
+          <Icon name="refresh" size={24} />
+        </button>
         <button className="icon-button" onClick={onOpenFilter} aria-label="搜索">
           <Icon name="search" size={24} />
         </button>
