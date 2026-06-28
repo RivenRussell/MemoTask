@@ -29,14 +29,30 @@ describe("Electron packaging contract", () => {
 
   it("packages the Vite dist directory with a local Electron main process", () => {
     expect(existsSync(path.join(root, "electron", "main.cjs"))).toBe(true);
+    expect(existsSync(path.join(root, "electron", "preload.cjs"))).toBe(true);
     expect(existsSync(path.join(root, "electron-builder.yml"))).toBe(true);
 
     const mainProcess = readText("electron/main.cjs");
+    const preload = readText("electron/preload.cjs");
     const builderConfig = readText("electron-builder.yml");
 
     expect(mainProcess).toContain("BrowserWindow");
     expect(mainProcess).toContain("loadFile");
     expect(mainProcess).toContain("dist");
+    expect(mainProcess).toContain("preload:");
+    expect(mainProcess).toContain("ipcMain.handle");
+    expect(mainProcess).toContain("memotask:hide-to-tray");
+    expect(mainProcess).toContain("Tray");
+    expect(mainProcess).toContain("Menu.buildFromTemplate");
+    expect(mainProcess).toContain("mainWindow.on(\"minimize\"");
+    expect(mainProcess).toContain("app.isPackaged");
+    expect(mainProcess).toContain("process.resourcesPath");
+    expect(mainProcess).toContain("app.asar.unpacked");
+    expect(mainProcess).toContain("src-tauri");
+    expect(mainProcess).toContain("icon.ico");
+    expect(preload).toContain("contextBridge.exposeInMainWorld");
+    expect(preload).toContain("memotaskDesktop");
+    expect(preload).toContain("hideToTray");
     expect(builderConfig).toContain("appId: cn.rrwks.memotask");
     expect(builderConfig).toContain("directories:");
     expect(builderConfig).toContain("output: release/electron");
@@ -45,5 +61,8 @@ describe("Electron packaging contract", () => {
     expect(builderConfig).toContain("signExecutable: false");
     expect(builderConfig).toContain("dist/**/*");
     expect(builderConfig).toContain("electron/**/*");
+    expect(builderConfig).toContain("src-tauri/icons/**/*");
+    expect(builderConfig).toContain("asarUnpack:");
+    expect(builderConfig).toContain("src-tauri/icons/icon.ico");
   });
 });

@@ -8,6 +8,16 @@ interface MemoText {
 
 const tagTokenPattern = /(^|\s)#([\p{L}\p{N}_-]+)/gu;
 
+export type QuickRecordShortcut = "focus" | "publish" | "analyze" | null;
+
+interface QuickRecordKeyEvent {
+  key: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  shiftKey: boolean;
+  altKey?: boolean;
+}
+
 export function addMemoTextTag(text: MemoText, tag: string): MemoText {
   const normalized = normalizeMemoTag(tag);
   if (!normalized || memoTextHasTag(text, normalized)) {
@@ -94,6 +104,22 @@ export function moveIdByDelta(ids: string[], id: string, delta: -1 | 1): string[
   const [selected] = next.splice(index, 1);
   next.splice(nextIndex, 0, selected);
   return next;
+}
+
+export function getQuickRecordShortcut(event: QuickRecordKeyEvent): QuickRecordShortcut {
+  const hasPrimaryModifier = event.ctrlKey || event.metaKey;
+  if (!hasPrimaryModifier || event.altKey) {
+    return null;
+  }
+
+  const key = event.key.toLocaleLowerCase();
+  if (key === "k" && !event.shiftKey) {
+    return "focus";
+  }
+  if (key === "enter") {
+    return event.shiftKey ? "analyze" : "publish";
+  }
+  return null;
 }
 
 function memoTextHasTag(text: MemoText, normalizedTag: string): boolean {

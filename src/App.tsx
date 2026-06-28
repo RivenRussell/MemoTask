@@ -1,9 +1,10 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { FormEvent, KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
 import { apiClient } from "./api/client";
 import { extractMemoTagsFromText } from "./shared/memo-tags";
 import type { AiSettingsView, AnalyzeDraftResult, AuthUserView, Memo, MemoTodo, SyncStatusView } from "./types";
 import { Icon } from "./ui-icons";
-import { addMemoTextTag, collectMemoTags, filterMemosByQuery, moveIdByDelta, removeMemoTextTag, toggleTodoInMemoList } from "./ui-helpers";
+import { addMemoTextTag, collectMemoTags, filterMemosByQuery, getQuickRecordShortcut, moveIdByDelta, removeMemoTextTag, toggleTodoInMemoList } from "./ui-helpers";
 
 type View = "workspace" | "history" | "account";
 type AiPanelState = "idle" | "analyzing" | "done" | "failed" | "applied";
@@ -68,6 +69,8 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const captureTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const canHideToTray = typeof window !== "undefined" && Boolean(window.memotaskDesktop?.hideToTray);
 
   useEffect(() => {
     let mounted = true;
@@ -109,6 +112,23 @@ export default function App() {
     }, 240);
     return () => window.clearTimeout(timeout);
   }, [historyQuery, selectedTag, user, view]);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    function handleGlobalKeyDown(event: KeyboardEvent) {
+      if (getQuickRecordShortcut(event) !== "focus") {
+        return;
+      }
+      event.preventDefault();
+      focusQuickRecord();
+    }
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [user]);
 
   const visibleMemos = useMemo(() => filterMemosByQuery(memos, workspaceQuery), [memos, workspaceQuery]);
   const sidebarTags = useMemo(() => collectMemoTags(tags, memos), [tags, memos]);
@@ -224,6 +244,28 @@ export default function App() {
       setMemos((items) => [published, ...items.filter((item) => item.id !== published.id)]);
       setMessage("Memo 已发布");
     });
+  }
+
+  function focusQuickRecord() {
+    setSettingsOpen(false);
+    setFilterSheetOpen(false);
+    setView("workspace");
+    window.requestAnimationFrame(() => captureTextareaRef.current?.focus());
+  }
+
+  function handleCaptureKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    const shortcut = getQuickRecordShortcut(event);
+    if (shortcut !== "publish" && shortcut !== "analyze") {
+      return;
+    }
+
+    event.preventDefault();
+    if (shortcut === "publish" && busy !== "publish") {
+      void handlePublishDraft();
+    }
+    if (shortcut === "analyze" && busy !== "analyze") {
+      void handleAnalyzeDraft();
+    }
   }
 
   function openMemoEditor(memo: Memo) {
@@ -416,6 +458,14 @@ export default function App() {
     });
   }
 
+  async function hideToTray() {
+    try {
+      await window.memotaskDesktop?.hideToTray();
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    }
+  }
+
   if (checkingUser) {
     return (
       <main className="boot-screen">
@@ -431,7 +481,13 @@ export default function App() {
 
   return (
     <div className={`app-shell view-${view}`}>
-      <DesktopRail view={view} onViewChange={setView} onOpenSettings={() => setSettingsOpen(true)} />
+      <DesktopRail
+        view={view}
+        canHideToTray={canHideToTray}
+        onViewChange={setView}
+        onHideToTray={hideToTray}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
       <Sidebar
         view={view}
         query={view === "history" ? historyQuery : workspaceQuery}
@@ -449,6 +505,7 @@ export default function App() {
           <WorkspaceView
             draft={draft}
             setDraft={setDraft}
+            captureTextareaRef={captureTextareaRef}
             aiState={aiState}
             aiResult={aiResult}
             aiError={aiError}
@@ -464,6 +521,7 @@ export default function App() {
               setAiState("idle");
               setAiError("");
             }}
+            onCaptureKeyDown={handleCaptureKeyDown}
             onPublish={handlePublishDraft}
             onOpenMemo={openMemoEditor}
             onEditMemo={setEditedMemo}
@@ -621,7 +679,19 @@ function AuthScreen({ onAuthed }: { onAuthed: (user: AuthUserView) => void }) {
   );
 }
 
-function DesktopRail({ view, onViewChange, onOpenSettings }: { view: View; onViewChange: (view: View) => void; onOpenSettings: () => void }) {
+function DesktopRail({
+  view,
+  canHideToTray,
+  onViewChange,
+  onHideToTray,
+  onOpenSettings
+}: {
+  view: View;
+  canHideToTray: boolean;
+  onViewChange: (view: View) => void;
+  onHideToTray: () => void;
+  onOpenSettings: () => void;
+}) {
   return (
     <nav className="rail" aria-label="MemoTask 主导航">
       <button className="brand-mark rail-brand" onClick={() => onViewChange("workspace")} aria-label="MemoTask">M</button>
@@ -631,6 +701,11 @@ function DesktopRail({ view, onViewChange, onOpenSettings }: { view: View; onVie
       <button className={view === "history" ? "active" : ""} onClick={() => onViewChange("history")} aria-label="历史" title="历史">
         <Icon name="history" />
       </button>
+      {canHideToTray ? (
+        <button onClick={onHideToTray} aria-label="隐藏到托盘" title="隐藏到托盘">
+          <Icon name="tray" />
+        </button>
+      ) : null}
       <button className="rail-account" onClick={onOpenSettings} aria-label="设置" title="设置">
         <Icon name="user" />
       </button>
@@ -688,6 +763,7 @@ function Sidebar(props: {
 function WorkspaceView(props: {
   draft: DraftForm;
   setDraft: (draft: DraftForm) => void;
+  captureTextareaRef: RefObject<HTMLTextAreaElement | null>;
   aiState: AiPanelState;
   aiResult: AnalyzeDraftResult | null;
   aiError: string;
@@ -699,6 +775,7 @@ function WorkspaceView(props: {
   onAnalyze: () => void;
   onApplyAiResult: () => void;
   onClearAi: () => void;
+  onCaptureKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
   onPublish: () => void;
   onOpenMemo: (memo: Memo) => void;
   onEditMemo: (memo: EditableMemo) => void;
@@ -719,8 +796,10 @@ function WorkspaceView(props: {
       <section className="capture-panel" aria-labelledby="capture-title">
         <h1 id="capture-title" className="visually-hidden">随时记录 Memo</h1>
         <textarea
+          ref={props.captureTextareaRef}
           value={props.draft.content}
           onChange={(event) => props.setDraft({ ...props.draft, content: event.target.value })}
+          onKeyDown={props.onCaptureKeyDown}
           placeholder="随时记录..."
         />
         <div className="capture-actions">

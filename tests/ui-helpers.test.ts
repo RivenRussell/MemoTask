@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Memo } from "../src/types";
-import { addMemoTextTag, collectMemoTags, filterMemosByQuery, moveIdByDelta, removeMemoTextTag, toggleTodoInMemoList } from "../src/ui-helpers";
+import { addMemoTextTag, collectMemoTags, filterMemosByQuery, getQuickRecordShortcut, moveIdByDelta, removeMemoTextTag, toggleTodoInMemoList } from "../src/ui-helpers";
 
 function memo(overrides: Partial<Memo>): Memo {
   return {
@@ -92,5 +92,17 @@ describe("UI helper contract behavior", () => {
     expect(moveIdByDelta(["a", "b", "c"], "b", -1)).toEqual(["b", "a", "c"]);
     expect(moveIdByDelta(["a", "b", "c"], "b", 1)).toEqual(["a", "c", "b"]);
     expect(moveIdByDelta(["a", "b", "c"], "a", -1)).toEqual(["a", "b", "c"]);
+  });
+
+  it("classifies quick record keyboard shortcuts without hijacking plain typing", () => {
+    expect(getQuickRecordShortcut({ key: "k", ctrlKey: true, metaKey: false, shiftKey: false })).toBe("focus");
+    expect(getQuickRecordShortcut({ key: "K", ctrlKey: false, metaKey: true, shiftKey: false })).toBe("focus");
+    expect(getQuickRecordShortcut({ key: "Enter", ctrlKey: true, metaKey: false, shiftKey: false })).toBe("publish");
+    expect(getQuickRecordShortcut({ key: "Enter", ctrlKey: false, metaKey: true, shiftKey: false })).toBe("publish");
+    expect(getQuickRecordShortcut({ key: "Enter", ctrlKey: true, metaKey: false, shiftKey: true })).toBe("analyze");
+    expect(getQuickRecordShortcut({ key: "Enter", ctrlKey: false, metaKey: true, shiftKey: true })).toBe("analyze");
+    expect(getQuickRecordShortcut({ key: "Enter", ctrlKey: false, metaKey: false, shiftKey: false })).toBeNull();
+    expect(getQuickRecordShortcut({ key: "k", ctrlKey: false, metaKey: false, shiftKey: false })).toBeNull();
+    expect(getQuickRecordShortcut({ key: "x", ctrlKey: true, metaKey: false, shiftKey: false })).toBeNull();
   });
 });
