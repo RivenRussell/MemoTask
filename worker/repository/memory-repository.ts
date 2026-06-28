@@ -1,6 +1,6 @@
 import type { Memo, MemoTodo } from "../domain/types";
 import { DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, DEFAULT_PROMPT, normalizePromptTemplate } from "../../src/shared/ai-defaults";
-import { extractMemoTagsFromText, memoHasTag, normalizeMemoTag } from "../../src/shared/memo-tags";
+import { extractMemoTagsFromText, memoHasTag, normalizeMemoTag, normalizeMemoTags } from "../../src/shared/memo-tags";
 import type { AiSettings, AiSettingsInput, DraftInput, MemoRepository, PublishMemoInput, SyncStatus } from "./types";
 
 let idCounter = 0;
@@ -48,7 +48,7 @@ export class MemoryRepository implements MemoRepository {
       publishedAt: null,
       historyAt: null,
       deletedAt: null,
-      tags: extractMemoTagsFromText(input.title?.trim() || "未命名 Memo", input.content),
+      tags: tagsFromInput(input.tags, input.title?.trim() || "未命名 Memo", input.content),
       todos: []
     };
 
@@ -65,7 +65,7 @@ export class MemoryRepository implements MemoRepository {
 
     draft.title = input.title?.trim() || "未命名 Memo";
     draft.content = input.content;
-    draft.tags = extractMemoTagsFromText(draft.title, draft.content);
+    draft.tags = tagsFromInput(input.tags, draft.title, draft.content);
     draft.aiState = "idle";
     draft.aiError = null;
     draft.aiResult = null;
@@ -114,7 +114,7 @@ export class MemoryRepository implements MemoRepository {
         aiResult: hasAiTodos ? memo.aiResult : null,
         updatedAt: now,
         publishedAt: now,
-        tags: extractMemoTagsFromText(input.title, input.content),
+        tags: tagsFromInput(input.tags, input.title, input.content),
         todos: todos.map((todo) => ({ ...todo, memoId: memo.id }))
       });
       return cloneMemo(memo);
@@ -138,7 +138,7 @@ export class MemoryRepository implements MemoRepository {
       publishedAt: now,
       historyAt: null,
       deletedAt: null,
-      tags: extractMemoTagsFromText(input.title, input.content),
+      tags: tagsFromInput(input.tags, input.title, input.content),
       todos: []
     };
     published.todos = todos.map((todo) => ({ ...todo, memoId: published.id }));
@@ -300,7 +300,7 @@ export class MemoryRepository implements MemoRepository {
   }
 
   async saveMemo(userId: string, memo: Memo): Promise<Memo> {
-    const scopedMemo = { ...memo, userId, tags: extractMemoTagsFromText(memo.title, memo.content) };
+    const scopedMemo = { ...memo, userId, tags: normalizeMemoTags(memo.tags ?? extractMemoTagsFromText(memo.title, memo.content)) };
     const index = this.memos.findIndex((candidate) => candidate.id === memo.id);
     if (index < 0) {
       this.memos.push(cloneMemo(scopedMemo));
@@ -458,4 +458,8 @@ function createDefaultAiSettings(userId: string, now: string): AiSettings {
     createdAt: now,
     updatedAt: now
   };
+}
+
+function tagsFromInput(tags: string[] | undefined, title: string, content: string): string[] {
+  return tags ? normalizeMemoTags(tags) : extractMemoTagsFromText(title, content);
 }

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent, RefObject, TouchEvent as ReactTouchEvent } from "react";
 import { apiClient } from "./api/client";
-import { extractMemoTagsFromText } from "./shared/memo-tags";
+import { tagToneClass } from "./shared/memo-tags";
 import type { AiSettingsView, AnalyzeDraftResult, AuthUserView, Memo, MemoTodo, SyncStatusView } from "./types";
 import { Icon } from "./ui-icons";
 import {
-  addMemoTextTag,
+  addTagToList,
   collectMemoTags,
   didRefreshComplete,
   filterMemosByQuery,
@@ -14,7 +14,7 @@ import {
   isBusyInScope,
   moveIdByDelta,
   replaceOrRemoveMemoFromActiveList,
-  removeMemoTextTag,
+  removeTagFromList,
   toggleTodoInMemoList,
   upsertHistoryMemo
 } from "./ui-helpers";
@@ -26,11 +26,13 @@ type AuthMode = "login" | "register" | "verify" | "forgot";
 interface DraftForm {
   id: string | null;
   content: string;
+  tags: string[];
 }
 
 interface EditableMemo {
   title: string;
   content: string;
+  tags: string[];
   newTag: string;
   newTodo: string;
 }
@@ -68,7 +70,7 @@ export default function App() {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [workspaceQuery, setWorkspaceQuery] = useState("");
   const [historyQuery, setHistoryQuery] = useState("");
-  const [draft, setDraft] = useState<DraftForm>({ id: null, content: "" });
+  const [draft, setDraft] = useState<DraftForm>({ id: null, content: "", tags: [] });
   const [draftTag, setDraftTag] = useState("");
   const [aiState, setAiState] = useState<AiPanelState>("idle");
   const [aiResult, setAiResult] = useState<AnalyzeDraftResult | null>(null);
@@ -250,8 +252,8 @@ export default function App() {
       setError("请输入 Memo 内容");
       return null;
     }
-    const saved = draft.id ? await apiClient.updateDraft(draft.id, { content }) : await apiClient.createDraft({ content });
-    setDraft({ id: saved.id, content: saved.content });
+    const saved = draft.id ? await apiClient.updateDraft(draft.id, { content, tags: draft.tags }) : await apiClient.createDraft({ content, tags: draft.tags });
+    setDraft({ id: saved.id, content: saved.content, tags: saved.tags });
     setDrafts((items) => [saved, ...items.filter((item) => item.id !== saved.id)].slice(0, 3));
     return saved.id;
   }
@@ -289,12 +291,13 @@ export default function App() {
       return;
     }
 
-    setDraft((current) => {
-      const next = addMemoTextTag({ title: "", content: current.content }, tag);
-      return { ...current, content: next.content };
-    });
+    setDraft((current) => ({ ...current, tags: addTagToList(current.tags, tag) }));
     setDraftTag("");
     captureTextareaRef.current?.focus();
+  }
+
+  function removeTagFromDraft(tag: string) {
+    setDraft((current) => ({ ...current, tags: removeTagFromList(current.tags, tag) }));
   }
 
   async function handlePublishDraft() {
@@ -307,8 +310,8 @@ export default function App() {
 
       const title = aiResult?.title?.trim() || firstContentLine(content) || "未命名 Memo";
       const todos = aiResult?.todos.map((todo) => ({ ...todo, generatedByAi: true })) ?? [];
-      const published = await apiClient.publishMemo({ draftId: draft.id ?? undefined, title, content, todos });
-      setDraft({ id: null, content: "" });
+      const published = await apiClient.publishMemo({ draftId: draft.id ?? undefined, title, content, tags: draft.tags, todos });
+      setDraft({ id: null, content: "", tags: [] });
       setAiResult(null);
       setAiState("idle");
       setMemos((items) => [published, ...items.filter((item) => item.id !== published.id)]);
@@ -362,7 +365,7 @@ export default function App() {
 
   function openMemoEditor(memo: Memo) {
     setExpandedMemoId((current) => (current === memo.id ? null : memo.id));
-    setEditedMemo({ title: memo.title, content: memo.content, newTag: "", newTodo: "" });
+    setEditedMemo({ title: memo.title, content: memo.content, tags: memo.tags, newTag: "", newTodo: "" });
     setTodoEdits(Object.fromEntries(memo.todos.map((todo) => [todo.id, { title: todo.title, notes: todo.notes ?? "" }])));
   }
 
@@ -375,11 +378,11 @@ export default function App() {
         ...memo,
         title: editedMemo.title,
         content: editedMemo.content,
-        tags: extractMemoTagsFromText(editedMemo.title, editedMemo.content),
+        tags: editedMemo.tags,
         updatedAt: new Date().toISOString()
       };
       setMemos((items) => replaceOrRemoveMemoFromActiveList(items, optimisticMemo));
-      const updated = await apiClient.updateMemo(memo.id, { title: editedMemo.title, content: editedMemo.content });
+      const updated = await apiClient.updateMemo(memo.id, { title: editedMemo.title, content: editedMemo.content, tags: editedMemo.tags });
       setMemos((items) => replaceOrRemoveMemoFromActiveList(items, updated));
       setExpandedMemoId(updated.status === "active" ? updated.id : null);
       await Promise.all([refreshWorkspace(), refreshHistory(), refreshSettings()]);
@@ -391,16 +394,14 @@ export default function App() {
     if (!editedMemo || !editedMemo.newTag.trim()) {
       return;
     }
-    const next = addMemoTextTag({ title: editedMemo.title, content: editedMemo.content }, editedMemo.newTag);
-    setEditedMemo({ ...editedMemo, ...next, newTag: "" });
+    setEditedMemo({ ...editedMemo, tags: addTagToList(editedMemo.tags, editedMemo.newTag), newTag: "" });
   }
 
   function removeTagFromExpandedMemo(tag: string) {
     if (!editedMemo) {
       return;
     }
-    const next = removeMemoTextTag({ title: editedMemo.title, content: editedMemo.content }, tag);
-    setEditedMemo({ ...editedMemo, ...next });
+    setEditedMemo({ ...editedMemo, tags: removeTagFromList(editedMemo.tags, tag) });
   }
 
   async function handleToggleTodo(todo: MemoTodo) {
@@ -616,7 +617,7 @@ export default function App() {
         tags={sidebarTags}
         selectedTag={selectedTag}
         onSelectTag={setSelectedTag}
-        onDraftSelect={(item) => setDraft({ id: item.id, content: item.content })}
+        onDraftSelect={(item) => setDraft({ id: item.id, content: item.content, tags: item.tags })}
       />
       <main className="app-main">
         {refreshing ? <div className="refresh-bar" aria-label="正在刷新" /> : null}
@@ -630,6 +631,7 @@ export default function App() {
             onDraftTagChange={setDraftTag}
             suggestedTags={sidebarTags}
             onAddDraftTag={addTagToDraft}
+            onRemoveDraftTag={removeTagFromDraft}
             captureTextareaRef={captureTextareaRef}
             aiState={aiState}
             aiResult={aiResult}
@@ -704,7 +706,7 @@ export default function App() {
           selectedTag={selectedTag}
           onSelectTag={setSelectedTag}
           onDraftSelect={(item) => {
-            setDraft({ id: item.id, content: item.content });
+            setDraft({ id: item.id, content: item.content, tags: item.tags });
             setFilterSheetOpen(false);
           }}
           onClose={() => setFilterSheetOpen(false)}
@@ -901,6 +903,7 @@ function WorkspaceView(props: {
   onDraftTagChange: (tag: string) => void;
   suggestedTags: string[];
   onAddDraftTag: (tag?: string) => void;
+  onRemoveDraftTag: (tag: string) => void;
   captureTextareaRef: RefObject<HTMLTextAreaElement | null>;
   aiState: AiPanelState;
   aiResult: AnalyzeDraftResult | null;
@@ -931,7 +934,7 @@ function WorkspaceView(props: {
   onArchive: (memoId: string) => void;
 }) {
   const captureBusy = Boolean(props.busy);
-  const draftTags = extractMemoTagsFromText("", props.draft.content);
+  const draftTags = props.draft.tags;
   const suggestedTags = props.suggestedTags.filter((tag) => !draftTags.some((draftTag) => draftTag.toLocaleLowerCase() === tag.toLocaleLowerCase())).slice(0, 5);
   return (
     <div className="workspace">
@@ -946,7 +949,7 @@ function WorkspaceView(props: {
         />
         <div className="capture-tags" aria-label="草稿标签">
           {draftTags.map((tag) => (
-            <span key={tag} className="tag-chip selected">#{tag}</span>
+            <TagChip key={tag} tag={tag} selected onRemove={() => props.onRemoveDraftTag(tag)} />
           ))}
           <div className="draft-tag-input">
             <span className="hash-hint">#</span>
@@ -967,9 +970,7 @@ function WorkspaceView(props: {
             </button>
           </div>
           {suggestedTags.map((tag) => (
-            <button key={tag} type="button" className="tag-chip" onClick={() => props.onAddDraftTag(tag)}>
-              #{tag}
-            </button>
+            <TagChip key={tag} tag={tag} onClick={() => props.onAddDraftTag(tag)} />
           ))}
         </div>
         <div className="capture-actions">
@@ -1099,7 +1100,7 @@ function MemoCard(props: {
   onArchive: () => void;
 }) {
   const editor = props.editedMemo;
-  const editorTags = editor ? extractMemoTagsFromText(editor.title, editor.content) : props.memo.tags;
+  const editorTags = editor ? editor.tags : props.memo.tags;
   const memoBusy = isBusyInScope(props.busy, [`save-${props.memo.id}`, `archive-${props.memo.id}`, `reorder-${props.memo.id}`]);
 
   return (
@@ -1132,10 +1133,7 @@ function MemoCard(props: {
           <textarea value={editor.content} onChange={(event) => props.onEditMemo({ ...editor, content: event.target.value })} />
           <div className="tag-strip">
             {editorTags.map((tag) => (
-              <button key={tag} className="tag-chip selected" onClick={() => props.onRemoveTag(tag)}>
-                #{tag}
-                <Icon name="x" size={13} />
-              </button>
+              <TagChip key={tag} tag={tag} selected onRemove={() => props.onRemoveTag(tag)} />
             ))}
             <input
               value={editor.newTag}
@@ -1551,15 +1549,13 @@ function SearchBox({
 
 function TagList({ tags, selectedTag, onSelectTag }: { tags: string[]; selectedTag: string | null; onSelectTag: (tag: string | null) => void }) {
   if (!tags.length) {
-    return <p className="empty-copy">在 Memo 中写下 #标签 后会出现在这里。</p>;
+    return <p className="empty-copy">添加过的 Memo 标签会出现在这里。</p>;
   }
 
   return (
     <div className="tag-list">
       {tags.map((tag) => (
-        <button key={tag} className={`tag-chip ${selectedTag === tag ? "selected" : ""}`} onClick={() => onSelectTag(selectedTag === tag ? null : tag)}>
-          #{tag}
-        </button>
+        <TagChip key={tag} tag={tag} selected={selectedTag === tag} onClick={() => onSelectTag(selectedTag === tag ? null : tag)} />
       ))}
     </div>
   );
@@ -1572,10 +1568,24 @@ function TagStrip({ tags }: { tags: string[] }) {
   return (
     <div className="tag-strip">
       {tags.map((tag) => (
-        <span key={tag} className="tag-chip">#{tag}</span>
+        <TagChip key={tag} tag={tag} />
       ))}
     </div>
   );
+}
+
+function TagChip({ tag, selected = false, onClick, onRemove }: { tag: string; selected?: boolean; onClick?: () => void; onRemove?: () => void }) {
+  const className = `tag-chip ${tagToneClass(tag)} ${selected ? "selected" : ""}`;
+  if (onClick || onRemove) {
+    return (
+      <button type="button" className={className} onClick={onClick ?? onRemove}>
+        <span>#{tag}</span>
+        {onRemove ? <Icon name="x" size={13} /> : null}
+      </button>
+    );
+  }
+
+  return <span className={className}>#{tag}</span>;
 }
 
 function Notice({ tone, text, onDismiss }: { tone: "error" | "info"; text: string; onDismiss: () => void }) {

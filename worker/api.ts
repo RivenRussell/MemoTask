@@ -7,6 +7,7 @@ import { moveMemoToHistory, restoreMemoFromHistory, shouldAutoArchiveMemo, toggl
 import { MemoryRepository } from "./repository/memory-repository";
 import type { AiSettings, MemoRepository } from "./repository/types";
 import { DEFAULT_PROMPT } from "../src/shared/ai-defaults";
+import { extractMemoTagsFromText } from "../src/shared/memo-tags";
 import {
   syncMarkdownCheckboxForTodo,
   syncMarkdownTaskTitleForTodo,
@@ -385,13 +386,13 @@ export function createApi(options: ApiOptions = {}) {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
     const userId = auth.user?.id ?? "default";
-    const body = await readJson<{ title?: string; content?: string }>(context);
+    const body = await readJson<{ title?: string; content?: string; tags?: string[] }>(context);
     if (!body.content?.trim()) {
       return context.json({ error: { code: "VALIDATION_FAILED", message: "请输入 Memo 内容" } }, 400);
     }
 
     const now = getNow(options);
-    const draft = await repository.createDraft(userId, { title: body.title, content: body.content }, now);
+    const draft = await repository.createDraft(userId, { title: body.title, content: body.content, tags: body.tags }, now);
     await markSyncSuccess(repository, userId, now);
     return context.json({ draft }, 201);
   });
@@ -408,13 +409,13 @@ export function createApi(options: ApiOptions = {}) {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
     const userId = auth.user?.id ?? "default";
-    const body = await readJson<{ title?: string; content?: string }>(context);
+    const body = await readJson<{ title?: string; content?: string; tags?: string[] }>(context);
     if (!body.content?.trim()) {
       return context.json({ error: { code: "VALIDATION_FAILED", message: "请输入 Memo 内容" } }, 400);
     }
 
     const now = getNow(options);
-    const draft = await repository.updateDraft(userId, context.req.param("id"), { title: body.title, content: body.content }, now);
+    const draft = await repository.updateDraft(userId, context.req.param("id"), { title: body.title, content: body.content, tags: body.tags }, now);
     if (!draft) {
       return context.json({ error: { code: "NOT_FOUND", message: "草稿不存在" } }, 404);
     }
@@ -430,6 +431,7 @@ export function createApi(options: ApiOptions = {}) {
     const body = await readJson<{
       title?: string;
       content?: string;
+      tags?: string[];
       draftId?: string;
       todos?: Array<{ title?: string; notes?: string | null; generatedByAi?: boolean }>;
     }>(context);
@@ -444,6 +446,7 @@ export function createApi(options: ApiOptions = {}) {
         draftId: body.draftId,
         title: body.title?.trim() || "未命名 Memo",
         content: body.content,
+        tags: body.tags,
         todos: (body.todos ?? [])
           .filter((todo) => todo.title?.trim())
           .map((todo) => ({
@@ -496,14 +499,16 @@ export function createApi(options: ApiOptions = {}) {
       return context.json({ error: { code: "NOT_FOUND", message: "Memo 不存在" } }, 404);
     }
 
-    const body = await readJson<{ title?: string; content?: string }>(context);
+    const body = await readJson<{ title?: string; content?: string; tags?: string[] }>(context);
     const now = getNow(options);
     const content = body.content ?? memo.content;
     const linkedTodoSync = syncTodosFromLinkedMarkdownTasks(memo.todos, content, now);
+    const nextTitle = body.title?.trim() || memo.title;
     const nextMemo = {
       ...memo,
-      title: body.title?.trim() || memo.title,
+      title: nextTitle,
       content,
+      tags: body.tags ?? extractMemoTagsFromText(nextTitle, content),
       todos: linkedTodoSync.todos,
       autoArchiveSuppressedUntilChange: linkedTodoSync.statusChanged ? false : memo.autoArchiveSuppressedUntilChange,
       updatedAt: now

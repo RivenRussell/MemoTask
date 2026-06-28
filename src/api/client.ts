@@ -180,7 +180,7 @@ export class ApiClient {
     return { todo: body.todo, memo: body.memo ?? null };
   }
 
-  async updateMemo(memoId: string, input: { title: string; content: string }): Promise<Memo> {
+  async updateMemo(memoId: string, input: { title: string; content: string; tags?: string[] }): Promise<Memo> {
     const body = await this.request<{ memo: Memo }>(`/api/memos/${memoId}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },

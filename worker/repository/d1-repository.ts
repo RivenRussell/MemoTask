@@ -1,7 +1,7 @@
 import type { Memo, MemoTodo } from "../domain/types";
 import type { AiSettings, AiSettingsInput, DraftInput, MemoRepository, PublishMemoInput, SyncStatus } from "./types";
 import { DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, DEFAULT_PROMPT, normalizePromptTemplate } from "../../src/shared/ai-defaults";
-import { extractMemoTagsFromText, memoHasTag, normalizeMemoTag } from "../../src/shared/memo-tags";
+import { extractMemoTagsFromText, memoHasTag, normalizeMemoTag, normalizeMemoTags } from "../../src/shared/memo-tags";
 
 type MemoRow = {
   id: string;
@@ -79,7 +79,7 @@ export class D1Repository implements MemoRepository {
       publishedAt: null,
       historyAt: null,
       deletedAt: null,
-      tags: extractMemoTagsFromText(input.title?.trim() || "未命名 Memo", input.content),
+      tags: tagsFromInput(input.tags, input.title?.trim() || "未命名 Memo", input.content),
       todos: []
     };
 
@@ -103,7 +103,7 @@ export class D1Repository implements MemoRepository {
       )
       .bind(title, input.content, now, draftId, userId)
       .run();
-    await this.syncMemoTags(userId, draftId, extractMemoTagsFromText(title, input.content));
+    await this.syncMemoTags(userId, draftId, tagsFromInput(input.tags, title, input.content));
     await this.trimDrafts(userId, 3);
     return this.findMemo(userId, draftId);
   }
@@ -138,7 +138,7 @@ export class D1Repository implements MemoRepository {
       updatedAt: now,
       publishedAt: now,
       deletedAt: null,
-      tags: extractMemoTagsFromText(input.title, input.content),
+      tags: tagsFromInput(input.tags, input.title, input.content),
       todos: input.todos.map((todo, index) => ({
         id: createId("todo"),
         memoId: existing?.id ?? "",
@@ -370,7 +370,7 @@ export class D1Repository implements MemoRepository {
   }
 
   async saveMemo(userId: string, memo: Memo): Promise<Memo> {
-    const scopedMemo = { ...memo, userId, tags: extractMemoTagsFromText(memo.title, memo.content) };
+    const scopedMemo = { ...memo, userId, tags: normalizeMemoTags(memo.tags ?? extractMemoTagsFromText(memo.title, memo.content)) };
     await this.upsertMemo(scopedMemo);
     if (memo.todos.length > 0) {
       await this.db.batch(memo.todos.map((todo) => this.todoStatement(todo)));
@@ -882,6 +882,10 @@ function createDefaultAiSettings(userId: string, now: string): AiSettings {
     createdAt: now,
     updatedAt: now
   };
+}
+
+function tagsFromInput(tags: string[] | undefined, title: string, content: string): string[] {
+  return tags ? normalizeMemoTags(tags) : extractMemoTagsFromText(title, content);
 }
 
 function createId(prefix: string): string {

@@ -114,6 +114,31 @@ describe("memo data loop API", () => {
     expect(tags.tags).toEqual(["life", "side-project", "Work"]);
   });
 
+  it("publishes structured tags without writing them into memo content", async () => {
+    const { app } = createTestApi();
+
+    const taggedResponse = await app.request("/api/memos/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "项目记录",
+        content: "这里是干净正文",
+        tags: ["工作", "#Cloudflare", "工作"],
+        todos: []
+      })
+    });
+
+    const tagged = await json(taggedResponse);
+    const filtered = await json(await app.request("/api/memos?tag=cloudflare"));
+    const tags = await json(await app.request("/api/tags"));
+
+    expect(tagged.memo.content).toBe("这里是干净正文");
+    expect(tagged.memo.tags).toEqual(["工作", "Cloudflare"]);
+    expect(filtered.memos.map((memo: { id: string }) => memo.id)).toEqual([tagged.memo.id]);
+    expect(tags.tags).toEqual(expect.arrayContaining(["Cloudflare", "工作"]));
+    expect(tags.tags).toHaveLength(2);
+  });
+
   it("updates parsed tags when memo title or content changes", async () => {
     const { app } = createTestApi();
     const publishResponse = await app.request("/api/memos/publish", {
@@ -137,6 +162,36 @@ describe("memo data loop API", () => {
 
     expect(updateResponse.status).toBe(200);
     expect((await json(updateResponse)).memo.tags).toEqual(["new"]);
+    expect(oldFilter.memos).toEqual([]);
+    expect(newFilter.memos.map((memo: { id: string }) => memo.id)).toEqual([published.memo.id]);
+  });
+
+  it("updates structured tags without requiring inline tag tokens", async () => {
+    const { app } = createTestApi();
+    const publishResponse = await app.request("/api/memos/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "旧 Memo",
+        content: "旧内容",
+        tags: ["old"],
+        todos: []
+      })
+    });
+    const published = await json(publishResponse);
+
+    const updateResponse = await app.request(`/api/memos/${published.memo.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "新 Memo", content: "新内容", tags: ["new", "#Design"] })
+    });
+    const oldFilter = await json(await app.request("/api/memos?tag=old"));
+    const newFilter = await json(await app.request("/api/memos?tag=design"));
+    const updated = await json(updateResponse);
+
+    expect(updateResponse.status).toBe(200);
+    expect(updated.memo.content).toBe("新内容");
+    expect(updated.memo.tags).toEqual(["new", "Design"]);
     expect(oldFilter.memos).toEqual([]);
     expect(newFilter.memos.map((memo: { id: string }) => memo.id)).toEqual([published.memo.id]);
   });

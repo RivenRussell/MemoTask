@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Memo } from "../src/types";
 import {
-  addMemoTextTag,
+  addTagToList,
   collectMemoTags,
   filterMemosByQuery,
   getQuickRecordShortcut,
@@ -9,7 +9,7 @@ import {
   didRefreshComplete,
   isBusyInScope,
   moveIdByDelta,
-  removeMemoTextTag,
+  removeTagFromList,
   replaceOrRemoveMemoFromActiveList,
   toggleTodoInMemoList,
   upsertHistoryMemo
@@ -40,23 +40,10 @@ function memo(overrides: Partial<Memo>): Memo {
 }
 
 describe("UI helper contract behavior", () => {
-  it("adds tags by writing #tag text into memo content instead of creating a local tag field", () => {
-    const result = addMemoTextTag({ title: "部署计划 #Deploy", content: "整理 Cloudflare 部署" }, "cloudflare");
-
-    expect(result.title).toBe("部署计划 #Deploy");
-    expect(result.content).toBe("整理 Cloudflare 部署 #cloudflare");
-    expect(addMemoTextTag(result, "deploy")).toEqual(result);
-    expect(addMemoTextTag(result, "#release").content).toBe("整理 Cloudflare 部署 #cloudflare #release");
-  });
-
-  it("removes matching tag tokens from title and content by normalized name", () => {
-    const result = removeMemoTextTag(
-      { title: "部署计划 #Deploy", content: "整理 #cloudflare 部署\n补充 #deploy 步骤" },
-      "deploy"
-    );
-
-    expect(result.title).toBe("部署计划");
-    expect(result.content).toBe("整理 #cloudflare 部署\n补充 步骤");
+  it("manages structured tag lists without changing memo content", () => {
+    expect(addTagToList(["工作"], "#Cloudflare")).toEqual(["工作", "Cloudflare"]);
+    expect(addTagToList(["工作"], "工作")).toEqual(["工作"]);
+    expect(removeTagFromList(["工作", "Cloudflare"], "cloudflare")).toEqual(["工作"]);
   });
 
   it("filters the active memo queue locally across title, content, tags, todos, and notes", () => {

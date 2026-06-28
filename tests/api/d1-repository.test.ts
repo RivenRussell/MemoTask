@@ -203,7 +203,7 @@ describe("D1Repository", () => {
         publishedAt: "2026-06-22T12:00:00.000Z",
         historyAt: null,
         deletedAt: null,
-        tags: [],
+        tags: ["archive"],
         todos: []
       },
       "archived",

@@ -48,12 +48,14 @@ export interface DraftTodoInput {
 export interface DraftInput {
   title?: string;
   content: string;
+  tags?: string[];
 }
 
 export interface PublishMemoInput {
   draftId?: string;
   title: string;
   content: string;
+  tags?: string[];
   todos: DraftTodoInput[];
 }
 

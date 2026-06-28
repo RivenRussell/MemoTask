@@ -3,11 +3,13 @@ import type { Memo, MemoTodo } from "../domain/types";
 export interface DraftInput {
   title?: string;
   content: string;
+  tags?: string[];
 }
 
 export interface PublishMemoInput {
   title: string;
   content: string;
+  tags?: string[];
   draftId?: string;
   todos: Array<{
     title: string;

@@ -84,6 +84,7 @@ describe("frontend API client", () => {
     const published = await client.publishMemo({
       title: "新 Memo",
       content: "原始内容",
+      tags: ["项目", "Cloudflare"],
       todos: [{ title: "第一步", notes: null, generatedByAi: false }]
     });
     const memos = await client.listMemos();
@@ -97,10 +98,30 @@ describe("frontend API client", () => {
       body: JSON.stringify({
         title: "新 Memo",
         content: "原始内容",
+        tags: ["项目", "Cloudflare"],
         todos: [{ title: "第一步", notes: null, generatedByAi: false }]
       })
     });
     expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/memos", { credentials: "include" });
+  });
+
+  it("sends structured tags when updating a memo", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      jsonResponse({
+        memo: { id: "memo-1", title: "新 Memo", content: "正文", tags: ["设计"], todos: [] }
+      })
+    );
+    const client = new ApiClient(fetchMock);
+
+    const updated = await client.updateMemo("memo-1", { title: "新 Memo", content: "正文", tags: ["设计"] });
+
+    expect(updated.tags).toEqual(["设计"]);
+    expect(fetchMock).toHaveBeenCalledWith("/api/memos/memo-1", {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "新 Memo", content: "正文", tags: ["设计"] })
+    });
   });
 
   it("requests shared memo tags and tag-filtered memo lists", async () => {

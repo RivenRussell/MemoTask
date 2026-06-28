@@ -1,12 +1,5 @@
 import type { Memo } from "./types";
-import { extractMemoTagsFromText, normalizeMemoTag } from "./shared/memo-tags";
-
-interface MemoText {
-  title: string;
-  content: string;
-}
-
-const tagTokenPattern = /(^|\s)#([\p{L}\p{N}_-]+)/gu;
+import { extractMemoTagsFromText, normalizeMemoTag, normalizeMemoTags } from "./shared/memo-tags";
 
 export type QuickRecordShortcut = "focus" | "publish" | "analyze" | null;
 
@@ -25,29 +18,13 @@ interface QuickRecordKeyEvent {
   altKey?: boolean;
 }
 
-export function addMemoTextTag(text: MemoText, tag: string): MemoText {
-  const tagText = tag.trim().replace(/^#+/, "").trim();
-  const normalized = normalizeMemoTag(tagText);
-  if (!normalized || memoTextHasTag(text, normalized)) {
-    return text;
-  }
-
-  return {
-    ...text,
-    content: `${text.content.trimEnd()} #${tagText}`.trimStart()
-  };
+export function addTagToList(tags: string[], tag: string): string[] {
+  return normalizeMemoTags([...tags, tag]);
 }
 
-export function removeMemoTextTag(text: MemoText, tag: string): MemoText {
+export function removeTagFromList(tags: string[], tag: string): string[] {
   const normalized = normalizeMemoTag(tag);
-  if (!normalized) {
-    return text;
-  }
-
-  return {
-    title: removeTagTokens(text.title, normalized),
-    content: removeTagTokens(text.content, normalized)
-  };
+  return tags.filter((candidate) => normalizeMemoTag(candidate) !== normalized);
 }
 
 export function filterMemosByQuery(memos: Memo[], query: string): Memo[] {
@@ -158,27 +135,6 @@ export function didRefreshComplete(results: boolean[]): boolean {
 
 export function isBusyInScope(busy: string, scopes: string[]): boolean {
   return Boolean(busy) && scopes.some((scope) => busy === scope || busy.startsWith(scope));
-}
-
-function memoTextHasTag(text: MemoText, normalizedTag: string): boolean {
-  const source = `${text.title}\n${text.content}`;
-  for (const match of source.matchAll(tagTokenPattern)) {
-    if (normalizeMemoTag(match[2]) === normalizedTag) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function removeTagTokens(value: string, normalizedTag: string): string {
-  return value
-    .replace(tagTokenPattern, (fullMatch: string, prefix: string, tag: string) =>
-      normalizeMemoTag(tag) === normalizedTag ? prefix : fullMatch
-    )
-    .split(/\r?\n/)
-    .map((line) => line.replace(/[ \t]{2,}/g, " ").trim())
-    .join(value.includes("\r\n") ? "\r\n" : "\n")
-    .trim();
 }
 
 function memoSearchText(memo: Memo): string {
