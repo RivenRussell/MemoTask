@@ -34,6 +34,7 @@ export interface Memo {
   publishedAt: string | null;
   historyAt: string | null;
   deletedAt: string | null;
+  tags: string[];
   todos: MemoTodo[];
 }
 

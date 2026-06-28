@@ -426,7 +426,7 @@ git diff --check
 检查密钥：
 
 ```bash
-rg -n -P "re_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|Bearer (?!test-|example-|placeholder)[A-Za-z0-9_.-]{20,}" . -g "!node_modules/**" -g "!dist/**" -g "!.wrangler/**" -g "!output/**" -g "!test-results/**" -g "!playwright-report/**"
+rg -n -P "re_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|Bearer (?!test-|example-|placeholder)[A-Za-z0-9_.-]{20,}" . -g "!node_modules/**" -g "!dist/**" -g "!.wrangler/**" -g "!output/**" -g "!test-results/**" -g "!release/**"
 ```
 
 确认不要提交：
@@ -436,6 +436,6 @@ rg -n -P "re_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|Bearer (?!test-|example-|pl
 - `dist/`
 - `.wrangler/`
 - `test-results/`
-- `playwright-report/`
+- `release/`
 - 真实 Resend API Key
 - 真实人工智能接口密钥

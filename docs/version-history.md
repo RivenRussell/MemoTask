@@ -12,6 +12,8 @@
 
 v4.2.4 完成 Markdown checkbox 与结构化 Todo 同步阶段。带有 `<!-- memotask:todo=TODO_ID -->` 标记的 Markdown task 会与对应 Todo 同步标题和完成状态；未绑定的 Markdown checkbox 仍然只是正文内容。
 
+2026-06-27 起，旧版混合前端 UI 已退役并清理。后续前端实现以 [UI 功能与边界设计契约](UI/memotask-ui-design-contract.md) 为准。
+
 ## 关键版本点
 
 | 版本点 | 类型 | 说明 |
@@ -40,7 +42,7 @@ v4.2.4 完成 Markdown checkbox 与结构化 Todo 同步阶段。带有 `<!-- me
 | `v4.2.3` | Markdown 渲染（已完成） |
 | `v4.2.4` | Markdown checkbox 与结构化 Todo 同步（已完成） |
 
-详细计划见 [MemoTask v4 Memos Alignment Roadmap](memos-alignment-roadmap.md)。
+旧版 v4 路线文档已删除，避免与当前 UI 设计契约冲突。
 
 ## v2.0.0 内容摘要
 
@@ -191,7 +193,7 @@ git diff --check
 再检查是否误提交密钥：
 
 ```bash
-rg -n -P "re_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|Bearer (?!test-|example-|placeholder)[A-Za-z0-9_.-]{20,}" . -g "!node_modules/**" -g "!dist/**" -g "!.wrangler/**" -g "!output/**" -g "!test-results/**" -g "!playwright-report/**"
+rg -n -P "re_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|Bearer (?!test-|example-|placeholder)[A-Za-z0-9_.-]{20,}" . -g "!node_modules/**" -g "!dist/**" -g "!.wrangler/**" -g "!output/**" -g "!test-results/**" -g "!release/**"
 ```
 
 发布后检查：

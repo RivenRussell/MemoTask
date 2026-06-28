@@ -1,0 +1,44 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "MemoTask",
+  "version": "4.2.4",
+  "identifier": "cn.rrwks.memotask",
+  "build": {
+    "frontendDist": "https://memotask.rrwks.cn",
+    "devUrl": "https://memotask.rrwks.cn",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "MemoTask",
+        "width": 1200,
+        "height": 820,
+        "minWidth": 920,
+        "minHeight": 640,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "shortDescription": "MemoTask",
+    "longDescription": "MemoTask desktop client for memos and todos.",
+    "android": {
+      "debugApplicationIdSuffix": ".debug"
+    }
+  }
+}

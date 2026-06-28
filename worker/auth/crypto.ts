@@ -60,6 +60,14 @@ export function readSessionToken(cookieHeader: string | null | undefined): strin
   return null;
 }
 
+export function readBearerToken(authorizationHeader: string | null | undefined): string | null {
+  const [scheme, token] = (authorizationHeader ?? "").trim().split(/\s+/, 2);
+  if (scheme?.toLowerCase() !== "bearer" || !token) {
+    return null;
+  }
+  return token;
+}
+
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   const buffer = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(buffer).set(bytes);

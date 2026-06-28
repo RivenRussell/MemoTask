@@ -1,6 +1,7 @@
 import type { Memo, MemoTodo } from "../domain/types";
 import type { AiSettings, AiSettingsInput, DraftInput, MemoRepository, PublishMemoInput, SyncStatus } from "./types";
 import { DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, DEFAULT_PROMPT, normalizePromptTemplate } from "../../src/shared/ai-defaults";
+import { extractMemoTagsFromText, memoHasTag, normalizeMemoTag } from "../../src/shared/memo-tags";
 
 type MemoRow = {
   id: string;
@@ -33,6 +34,13 @@ type TodoRow = {
   updated_at: string;
   completed_at: string | null;
   deleted_at: string | null;
+};
+
+type MemoTagRow = {
+  memo_id: string;
+  name: string;
+  normalized_name: string;
+  sort_order: number;
 };
 
 type AiSettingsRow = {
@@ -68,6 +76,7 @@ export class D1Repository implements MemoRepository {
       publishedAt: null,
       historyAt: null,
       deletedAt: null,
+      tags: extractMemoTagsFromText(input.title?.trim() || "未命名 Memo", input.content),
       todos: []
     };
 
@@ -82,14 +91,16 @@ export class D1Repository implements MemoRepository {
       return null;
     }
 
+    const title = input.title?.trim() || "未命名 Memo";
     await this.db
       .prepare(
         `UPDATE memos
          SET title = ?, content = ?, updated_at = ?
          WHERE id = ? AND user_id = ? AND status = 'draft' AND deleted_at IS NULL`
       )
-      .bind(input.title?.trim() || "未命名 Memo", input.content, now, draftId, userId)
+      .bind(title, input.content, now, draftId, userId)
       .run();
+    await this.syncMemoTags(draftId, extractMemoTagsFromText(title, input.content));
     await this.trimDrafts(userId, 3);
     return this.findMemo(userId, draftId);
   }
@@ -120,6 +131,7 @@ export class D1Repository implements MemoRepository {
       updatedAt: now,
       publishedAt: now,
       deletedAt: null,
+      tags: extractMemoTagsFromText(input.title, input.content),
       todos: input.todos.map((todo, index) => ({
         id: createId("todo"),
         memoId: existing?.id ?? "",
@@ -140,7 +152,7 @@ export class D1Repository implements MemoRepository {
     return (await this.findMemo(userId, memo.id)) ?? memo;
   }
 
-  async listActiveMemos(userId: string): Promise<Memo[]> {
+  async listActiveMemos(userId: string, tag?: string): Promise<Memo[]> {
     const rows = await this.db
       .prepare(
         `SELECT * FROM memos
@@ -149,7 +161,8 @@ export class D1Repository implements MemoRepository {
       )
       .bind(userId)
       .all<MemoRow>();
-    return this.hydrateMemos(rows.results);
+    const memos = await this.hydrateMemos(rows.results);
+    return tag ? memos.filter((memo) => memoHasTag(memo.tags, tag)) : memos;
   }
 
   async listHistoryMemos(userId: string): Promise<Memo[]> {
@@ -164,10 +177,11 @@ export class D1Repository implements MemoRepository {
     return this.hydrateMemos(rows.results);
   }
 
-  async searchHistoryMemos(userId: string, query: string): Promise<Memo[]> {
+  async searchHistoryMemos(userId: string, query: string, tag?: string): Promise<Memo[]> {
     const normalized = query.trim();
     if (!normalized) {
-      return this.listHistoryMemos(userId);
+      const history = await this.listHistoryMemos(userId);
+      return tag ? history.filter((memo) => memoHasTag(memo.tags, tag)) : history;
     }
 
     const pattern = `%${normalized.toLowerCase()}%`;
@@ -189,7 +203,35 @@ export class D1Repository implements MemoRepository {
       )
       .bind(userId, pattern, pattern, pattern, pattern)
       .all<MemoRow>();
-    return this.hydrateMemos(rows.results);
+    const memos = await this.hydrateMemos(rows.results);
+    return tag ? memos.filter((memo) => memoHasTag(memo.tags, tag)) : memos;
+  }
+
+  async listTags(userId: string): Promise<string[]> {
+    const rows = await this.db
+      .prepare(
+        `SELECT * FROM memos
+         WHERE user_id = ? AND status IN ('active', 'history') AND deleted_at IS NULL
+         ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, sort_order ASC, history_at DESC`
+      )
+      .bind(userId)
+      .all<MemoRow>();
+    const memos = await this.hydrateMemos(rows.results);
+    const tags: string[] = [];
+    const seen = new Set<string>();
+
+    for (const memo of memos) {
+      for (const tag of memo.tags) {
+        const normalized = normalizeMemoTag(tag);
+        if (!normalized || seen.has(normalized)) {
+          continue;
+        }
+        seen.add(normalized);
+        tags.push(tag);
+      }
+    }
+
+    return tags.sort((a, b) => normalizeMemoTag(a).localeCompare(normalizeMemoTag(b)));
   }
 
   async findTodo(userId: string, todoId: string): Promise<MemoTodo | null> {
@@ -206,11 +248,38 @@ export class D1Repository implements MemoRepository {
   }
 
   async updateTodo(userId: string, todo: MemoTodo): Promise<MemoTodo> {
-    const memo = await this.findMemo(userId, todo.memoId);
-    if (!memo) {
-      throw new Error("Todo not found");
-    }
-    await this.upsertTodo(todo);
+    await this.db
+      .prepare(
+        `UPDATE memo_todos
+         SET title = ?,
+             notes = ?,
+             status = ?,
+             sort_order = ?,
+             generated_by_ai = ?,
+             updated_at = ?,
+             completed_at = ?,
+             deleted_at = ?
+         WHERE id = ?
+           AND memo_id = ?
+           AND EXISTS (
+             SELECT 1 FROM memos
+             WHERE memos.id = memo_todos.memo_id AND memos.user_id = ?
+           )`
+      )
+      .bind(
+        todo.title,
+        todo.notes,
+        todo.status,
+        todo.sortOrder,
+        todo.generatedByAi ? 1 : 0,
+        todo.updatedAt,
+        todo.completedAt,
+        todo.deletedAt,
+        todo.id,
+        todo.memoId,
+        userId
+      )
+      .run();
     return todo;
   }
 
@@ -294,11 +363,12 @@ export class D1Repository implements MemoRepository {
   }
 
   async saveMemo(userId: string, memo: Memo): Promise<Memo> {
-    const scopedMemo = { ...memo, userId };
+    const scopedMemo = { ...memo, userId, tags: extractMemoTagsFromText(memo.title, memo.content) };
     await this.upsertMemo(scopedMemo);
     if (memo.todos.length > 0) {
       await this.db.batch(memo.todos.map((todo) => this.todoStatement(todo)));
     }
+    await this.syncMemoTags(scopedMemo.id, scopedMemo.tags);
     return scopedMemo;
   }
 
@@ -434,8 +504,21 @@ export class D1Repository implements MemoRepository {
       )
       .bind(...ids)
       .all<TodoRow>();
+    const tags = await this.db
+      .prepare(
+        `SELECT * FROM memo_tags
+         WHERE memo_id IN (${placeholders})
+         ORDER BY sort_order ASC`
+      )
+      .bind(...ids)
+      .all<MemoTagRow>();
     const todosByMemo = groupTodos(todos.results.map(mapTodo));
-    return rows.map((row) => ({ ...mapMemo(row), todos: todosByMemo.get(row.id) ?? [] }));
+    const tagsByMemo = groupTags(tags.results);
+    return rows.map((row) => ({
+      ...mapMemo(row),
+      tags: tagsByMemo.get(row.id) ?? extractMemoTagsFromText(row.title, row.content),
+      todos: todosByMemo.get(row.id) ?? []
+    }));
   }
 
   private async findMemosByIdsAndStatus(
@@ -553,6 +636,27 @@ export class D1Repository implements MemoRepository {
       .run();
   }
 
+  private async syncMemoTags(memoId: string, tags: string[]): Promise<void> {
+    await this.db.prepare("DELETE FROM memo_tags WHERE memo_id = ?").bind(memoId).run();
+    if (tags.length === 0) {
+      return;
+    }
+
+    await this.db.batch(
+      tags.map((tag, index) =>
+        this.db
+          .prepare(
+            `INSERT INTO memo_tags (memo_id, name, normalized_name, sort_order)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT(memo_id, normalized_name) DO UPDATE SET
+               name = excluded.name,
+               sort_order = excluded.sort_order`
+          )
+          .bind(memoId, tag, normalizeMemoTag(tag), index + 1)
+      )
+    );
+  }
+
   private todoStatement(todo: MemoTodo): D1PreparedStatement {
     return this.db
       .prepare(
@@ -639,6 +743,7 @@ function mapMemo(row: MemoRow): Memo {
     publishedAt: row.published_at,
     historyAt: row.history_at,
     deletedAt: row.deleted_at,
+    tags: [],
     todos: []
   };
 }
@@ -681,6 +786,14 @@ function groupTodos(todos: MemoTodo[]): Map<string, MemoTodo[]> {
   return byMemo;
 }
 
+function groupTags(rows: MemoTagRow[]): Map<string, string[]> {
+  const byMemo = new Map<string, string[]>();
+  for (const row of rows) {
+    byMemo.set(row.memo_id, [...(byMemo.get(row.memo_id) ?? []), row.name]);
+  }
+  return byMemo;
+}
+
 function createEmptyMemo(userId: string, id: string, now: string): Memo {
   return {
     id,
@@ -699,6 +812,7 @@ function createEmptyMemo(userId: string, id: string, now: string): Memo {
     publishedAt: null,
     historyAt: null,
     deletedAt: null,
+    tags: [],
     todos: []
   };
 }

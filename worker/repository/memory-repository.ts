@@ -1,5 +1,6 @@
 import type { Memo, MemoTodo } from "../domain/types";
 import { DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, DEFAULT_PROMPT, normalizePromptTemplate } from "../../src/shared/ai-defaults";
+import { extractMemoTagsFromText, memoHasTag, normalizeMemoTag } from "../../src/shared/memo-tags";
 import type { AiSettings, AiSettingsInput, DraftInput, MemoRepository, PublishMemoInput, SyncStatus } from "./types";
 
 let idCounter = 0;
@@ -12,6 +13,7 @@ function createId(prefix: string): string {
 function cloneMemo(memo: Memo): Memo {
   return {
     ...memo,
+    tags: [...memo.tags],
     todos: memo.todos.filter((todo) => todo.deletedAt === null).map((todo) => ({ ...todo }))
   };
 }
@@ -39,6 +41,7 @@ export class MemoryRepository implements MemoRepository {
       publishedAt: null,
       historyAt: null,
       deletedAt: null,
+      tags: extractMemoTagsFromText(input.title?.trim() || "未命名 Memo", input.content),
       todos: []
     };
 
@@ -55,6 +58,7 @@ export class MemoryRepository implements MemoRepository {
 
     draft.title = input.title?.trim() || "未命名 Memo";
     draft.content = input.content;
+    draft.tags = extractMemoTagsFromText(draft.title, draft.content);
     draft.updatedAt = now;
     this.trimDrafts(userId, 3);
     return cloneMemo(draft);
@@ -96,6 +100,7 @@ export class MemoryRepository implements MemoRepository {
         sortOrder: nextSortOrder,
         updatedAt: now,
         publishedAt: now,
+        tags: extractMemoTagsFromText(input.title, input.content),
         todos: todos.map((todo) => ({ ...todo, memoId: memo.id }))
       });
       return cloneMemo(memo);
@@ -118,6 +123,7 @@ export class MemoryRepository implements MemoRepository {
       publishedAt: now,
       historyAt: null,
       deletedAt: null,
+      tags: extractMemoTagsFromText(input.title, input.content),
       todos: []
     };
     published.todos = todos.map((todo) => ({ ...todo, memoId: published.id }));
@@ -125,9 +131,10 @@ export class MemoryRepository implements MemoRepository {
     return cloneMemo(published);
   }
 
-  async listActiveMemos(userId: string): Promise<Memo[]> {
+  async listActiveMemos(userId: string, tag?: string): Promise<Memo[]> {
     return this.memos
       .filter((memo) => memo.userId === userId && memo.status === "active" && memo.deletedAt === null)
+      .filter((memo) => !tag || memoHasTag(memo.tags, tag))
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map(cloneMemo);
   }
@@ -139,14 +146,16 @@ export class MemoryRepository implements MemoRepository {
       .map(cloneMemo);
   }
 
-  async searchHistoryMemos(userId: string, query: string): Promise<Memo[]> {
+  async searchHistoryMemos(userId: string, query: string, tag?: string): Promise<Memo[]> {
     const normalized = query.trim().toLowerCase();
     if (!normalized) {
-      return this.listHistoryMemos(userId);
+      const history = await this.listHistoryMemos(userId);
+      return tag ? history.filter((memo) => memoHasTag(memo.tags, tag)) : history;
     }
 
     return this.memos
       .filter((memo) => memo.userId === userId && memo.status === "history" && memo.deletedAt === null)
+      .filter((memo) => !tag || memoHasTag(memo.tags, tag))
       .filter((memo) => {
         const fields = [
           memo.title,
@@ -157,6 +166,28 @@ export class MemoryRepository implements MemoRepository {
       })
       .sort((a, b) => (b.historyAt ?? "").localeCompare(a.historyAt ?? ""))
       .map(cloneMemo);
+  }
+
+  async listTags(userId: string): Promise<string[]> {
+    const tags: string[] = [];
+    const seen = new Set<string>();
+
+    for (const memo of this.memos) {
+      if (memo.userId !== userId || (memo.status !== "active" && memo.status !== "history") || memo.deletedAt !== null) {
+        continue;
+      }
+
+      for (const tag of memo.tags) {
+        const normalized = normalizeMemoTag(tag);
+        if (!normalized || seen.has(normalized)) {
+          continue;
+        }
+        seen.add(normalized);
+        tags.push(tag);
+      }
+    }
+
+    return tags.sort((a, b) => normalizeMemoTag(a).localeCompare(normalizeMemoTag(b)));
   }
 
   async findTodo(userId: string, todoId: string): Promise<MemoTodo | null> {
@@ -254,7 +285,7 @@ export class MemoryRepository implements MemoRepository {
   }
 
   async saveMemo(userId: string, memo: Memo): Promise<Memo> {
-    const scopedMemo = { ...memo, userId };
+    const scopedMemo = { ...memo, userId, tags: extractMemoTagsFromText(memo.title, memo.content) };
     const index = this.memos.findIndex((candidate) => candidate.id === memo.id);
     if (index < 0) {
       this.memos.push(cloneMemo(scopedMemo));

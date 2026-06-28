@@ -11,6 +11,7 @@ import type { AuthRepository, AuthSession, AuthTokenRecord, AuthUser, EmailSende
 import { AuthError } from "./types";
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
+const SESSION_LAST_SEEN_WRITE_INTERVAL_MS = 1000 * 60 * 5;
 const EMAIL_VERIFICATION_TTL_MS = 1000 * 60 * 60 * 24;
 const PASSWORD_RESET_TTL_MS = 1000 * 60 * 30;
 
@@ -142,6 +143,14 @@ export class AuthService {
 
   async resolveSession(cookieHeader: string | null | undefined, now: string): Promise<PublicAuthUser | null> {
     const token = readSessionToken(cookieHeader);
+    return this.resolveSessionToken(token, now);
+  }
+
+  async resolveBearerSession(token: string | null | undefined, now: string): Promise<PublicAuthUser | null> {
+    return this.resolveSessionToken(token ?? null, now);
+  }
+
+  private async resolveSessionToken(token: string | null, now: string): Promise<PublicAuthUser | null> {
     if (!token) {
       return null;
     }
@@ -156,12 +165,21 @@ export class AuthService {
       return null;
     }
 
-    await this.options.repository.updateSession({ ...session, lastSeenAt: now });
+    if (shouldRefreshLastSeen(session.lastSeenAt, now)) {
+      await this.options.repository.updateSession({ ...session, lastSeenAt: now });
+    }
     return publicUser(user);
   }
 
   async logout(cookieHeader: string | null | undefined): Promise<{ sessionCookie: string }> {
-    const token = readSessionToken(cookieHeader);
+    return this.logoutSessionToken(readSessionToken(cookieHeader));
+  }
+
+  async logoutBearerSession(token: string | null | undefined): Promise<void> {
+    await this.logoutSessionToken(token ?? null);
+  }
+
+  private async logoutSessionToken(token: string | null): Promise<{ sessionCookie: string }> {
     if (token) {
       const session = await this.options.repository.findSessionByTokenHash(await hashToken(token));
       if (session) {
@@ -289,4 +307,8 @@ function addMilliseconds(value: string, milliseconds: number): string {
 
 function isExpired(expiresAt: string, now: string): boolean {
   return Date.parse(expiresAt) <= Date.parse(now);
+}
+
+function shouldRefreshLastSeen(lastSeenAt: string, now: string): boolean {
+  return Date.parse(now) - Date.parse(lastSeenAt) >= SESSION_LAST_SEEN_WRITE_INTERVAL_MS;
 }

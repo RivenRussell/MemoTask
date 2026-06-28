@@ -83,6 +83,64 @@ describe("memo data loop API", () => {
     expect(body.memos[0].todos).toHaveLength(1);
   });
 
+  it("publishes parsed tags and filters active memos by tag", async () => {
+    const { app } = createTestApi();
+
+    const taggedResponse = await app.request("/api/memos/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "项目 #Work",
+        content: "继续推进 #side-project #work",
+        todos: []
+      })
+    });
+    await app.request("/api/memos/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "生活记录",
+        content: "散步 #life",
+        todos: []
+      })
+    });
+
+    const tagged = await json(taggedResponse);
+    const filtered = await json(await app.request("/api/memos?tag=side-project"));
+    const tags = await json(await app.request("/api/tags"));
+
+    expect(tagged.memo.tags).toEqual(["Work", "side-project"]);
+    expect(filtered.memos.map((memo: { title: string }) => memo.title)).toEqual(["项目 #Work"]);
+    expect(tags.tags).toEqual(["life", "side-project", "Work"]);
+  });
+
+  it("updates parsed tags when memo title or content changes", async () => {
+    const { app } = createTestApi();
+    const publishResponse = await app.request("/api/memos/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "旧 Memo #old",
+        content: "旧内容",
+        todos: []
+      })
+    });
+    const published = await json(publishResponse);
+
+    const updateResponse = await app.request(`/api/memos/${published.memo.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "新 Memo", content: "新内容 #new" })
+    });
+    const oldFilter = await json(await app.request("/api/memos?tag=old"));
+    const newFilter = await json(await app.request("/api/memos?tag=new"));
+
+    expect(updateResponse.status).toBe(200);
+    expect((await json(updateResponse)).memo.tags).toEqual(["new"]);
+    expect(oldFilter.memos).toEqual([]);
+    expect(newFilter.memos.map((memo: { id: string }) => memo.id)).toEqual([published.memo.id]);
+  });
+
   it("moves a memo to history only after all todos are toggled done", async () => {
     const { app } = createTestApi();
     const publishResponse = await app.request("/api/memos/publish", {
@@ -224,8 +282,11 @@ describe("memo data loop API", () => {
     });
 
     const toggleResponse = await app.request(`/api/todos/${todoId}/toggle`, { method: "POST" });
+    const toggle = await json(toggleResponse);
 
     expect(toggleResponse.status).toBe(200);
+    expect(toggle.memo).toMatchObject({ id: published.memo.id, status: "history" });
+    expect(toggle.memo.content).toContain(`- [x] 发布说明 <!-- memotask:todo=${todoId} -->`);
     const history = await json(await app.request("/api/history"));
     expect(history.memos).toHaveLength(1);
     expect(history.memos[0].content).toContain(`- [x] 发布说明 <!-- memotask:todo=${todoId} -->`);
@@ -399,6 +460,31 @@ describe("memo data loop API", () => {
 
     expect(contentResult.memos).toHaveLength(1);
     expect(todoResult.memos).toHaveLength(1);
+  });
+
+  it("filters history search by parsed tag", async () => {
+    const { app } = createTestApi();
+    const deploy = await json(
+      await app.request("/api/memos/publish", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: "部署记录 #deploy", content: "包含 Cloudflare", todos: [] })
+      })
+    );
+    const design = await json(
+      await app.request("/api/memos/publish", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: "设计记录 #design", content: "包含 Cloudflare", todos: [] })
+      })
+    );
+    await app.request(`/api/memos/${deploy.memo.id}/archive`, { method: "POST" });
+    await app.request(`/api/memos/${design.memo.id}/archive`, { method: "POST" });
+
+    const result = await json(await app.request("/api/history/search?q=Cloudflare&tag=deploy"));
+
+    expect(result.memos.map((memo: { id: string }) => memo.id)).toEqual([deploy.memo.id]);
+    expect(result.memos[0].tags).toEqual(["deploy"]);
   });
 
   it("bulk deletes history memos and restores them with undo", async () => {

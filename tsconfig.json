@@ -15,7 +15,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "types": ["vitest/globals", "@testing-library/jest-dom", "@cloudflare/workers-types"]
+    "types": ["vitest/globals", "@cloudflare/workers-types"]
   },
-  "include": ["src", "worker", "tests", "vite.config.ts", "playwright.config.ts"]
+  "include": ["src", "worker", "tests", "vite.config.ts"]
 }

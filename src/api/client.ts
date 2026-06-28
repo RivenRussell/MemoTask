@@ -25,8 +25,30 @@ interface AiSettingsInput {
   promptTemplate: string;
 }
 
+interface SessionStorageAdapter {
+  get(key: string): string | null;
+  set(key: string, value: string): void;
+  remove(key: string): void;
+}
+
+interface ApiClientOptions {
+  baseUrl?: string;
+  sessionStorage?: SessionStorageAdapter;
+}
+
+const SESSION_TOKEN_KEY = "memotask.sessionToken";
+
 export class ApiClient {
-  constructor(private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis)) {}
+  private readonly baseUrl: string;
+  private readonly sessionStorage: SessionStorageAdapter | null;
+
+  constructor(
+    private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
+    options: ApiClientOptions = {}
+  ) {
+    this.baseUrl = normalizeBaseUrl(options.baseUrl ?? import.meta.env?.VITE_API_BASE_URL ?? "");
+    this.sessionStorage = options.sessionStorage ?? browserSessionStorage();
+  }
 
   async getCurrentUser(): Promise<AuthUserView | null> {
     try {
@@ -59,6 +81,7 @@ export class ApiClient {
 
   async logout(): Promise<void> {
     await this.request<{ ok: true }>("/api/auth/logout", { method: "POST" });
+    this.sessionStorage?.remove(SESSION_TOKEN_KEY);
   }
 
   async verifyEmail(code: string): Promise<AuthUserView> {
@@ -97,10 +120,16 @@ export class ApiClient {
     return body.user;
   }
 
-  async listMemos(): Promise<Memo[]> {
-    const body = await this.request<{ memos: Memo[] }>("/api/memos");
+  async listMemos(tag?: string): Promise<Memo[]> {
+    const body = await this.request<{ memos: Memo[] }>(tag ? `/api/memos?tag=${encodeURIComponent(tag)}` : "/api/memos");
     assertArray(body.memos);
     return body.memos;
+  }
+
+  async listTags(): Promise<string[]> {
+    const body = await this.request<{ tags: string[] }>("/api/tags");
+    assertArray(body.tags);
+    return body.tags;
   }
 
   async publishMemo(input: PublishMemoInput): Promise<Memo> {
@@ -145,8 +174,10 @@ export class ApiClient {
     return body.drafts;
   }
 
-  async toggleTodo(todoId: string): Promise<void> {
-    await this.request<{ todo: unknown }>(`/api/todos/${todoId}/toggle`, { method: "POST" });
+  async toggleTodo(todoId: string): Promise<{ todo: Memo["todos"][number]; memo: Memo | null }> {
+    const body = await this.request<{ todo: Memo["todos"][number]; memo?: Memo | null }>(`/api/todos/${todoId}/toggle`, { method: "POST" });
+    assertPresent(body.todo);
+    return { todo: body.todo, memo: body.memo ?? null };
   }
 
   async updateMemo(memoId: string, input: { title: string; content: string }): Promise<Memo> {
@@ -169,12 +200,14 @@ export class ApiClient {
     return body.memos;
   }
 
-  async reorderTodos(memoId: string, todoIds: string[]): Promise<void> {
-    await this.request<{ todos: unknown[] }>("/api/todos/reorder", {
+  async reorderTodos(memoId: string, todoIds: string[]): Promise<Memo["todos"]> {
+    const body = await this.request<{ todos: Memo["todos"] }>("/api/todos/reorder", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ memoId, todoIds })
     });
+    assertArray(body.todos);
+    return body.todos;
   }
 
   async archiveMemo(memoId: string): Promise<Memo> {
@@ -183,24 +216,30 @@ export class ApiClient {
     return body.memo;
   }
 
-  async createTodo(memoId: string, input: { title: string; notes?: string | null; generatedByAi?: boolean }): Promise<void> {
-    await this.request<{ todo: unknown }>(`/api/memos/${memoId}/todos`, {
+  async createTodo(memoId: string, input: { title: string; notes?: string | null; generatedByAi?: boolean }): Promise<Memo["todos"][number]> {
+    const body = await this.request<{ todo: Memo["todos"][number] }>(`/api/memos/${memoId}/todos`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input)
     });
+    assertPresent(body.todo);
+    return body.todo;
   }
 
-  async updateTodo(todoId: string, input: { title: string; notes?: string | null }): Promise<void> {
-    await this.request<{ todo: unknown }>(`/api/todos/${todoId}`, {
+  async updateTodo(todoId: string, input: { title: string; notes?: string | null }): Promise<Memo["todos"][number]> {
+    const body = await this.request<{ todo: Memo["todos"][number] }>(`/api/todos/${todoId}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input)
     });
+    assertPresent(body.todo);
+    return body.todo;
   }
 
-  async deleteTodo(todoId: string): Promise<void> {
-    await this.request<{ todo: unknown }>(`/api/todos/${todoId}`, { method: "DELETE" });
+  async deleteTodo(todoId: string): Promise<Memo["todos"][number]> {
+    const body = await this.request<{ todo: Memo["todos"][number] }>(`/api/todos/${todoId}`, { method: "DELETE" });
+    assertPresent(body.todo);
+    return body.todo;
   }
 
   async listHistory(): Promise<Memo[]> {
@@ -209,8 +248,12 @@ export class ApiClient {
     return body.memos;
   }
 
-  async searchHistory(query: string): Promise<Memo[]> {
-    const body = await this.request<{ memos: Memo[] }>(`/api/history/search?q=${encodeURIComponent(query)}`);
+  async searchHistory(query: string, tag?: string): Promise<Memo[]> {
+    const params = new URLSearchParams({ q: query });
+    if (tag) {
+      params.set("tag", tag);
+    }
+    const body = await this.request<{ memos: Memo[] }>(`/api/history/search?${params.toString()}`);
     assertArray(body.memos);
     return body.memos;
   }
@@ -284,18 +327,59 @@ export class ApiClient {
   }
 
   private async request<T>(url: string, init?: RequestInit): Promise<T> {
-    const response = await this.fetcher(url, { ...init, credentials: "include" });
-    const body = (await response.json().catch(() => ({}))) as T & ApiErrorBody;
+    const response = await this.fetcher(this.url(url), { ...init, headers: this.headers(init?.headers), credentials: "include" });
+    const body = (await response.json().catch(() => ({}))) as T & ApiErrorBody & { sessionToken?: string | null };
 
     if (!response.ok) {
       throw new ApiRequestError(body.error?.code ?? "REQUEST_FAILED", body.error?.message ?? "请求失败，请稍后重试", response.status);
     }
 
+    if (body.sessionToken) {
+      this.sessionStorage?.set(SESSION_TOKEN_KEY, body.sessionToken);
+    }
+
     return body;
+  }
+
+  private url(url: string): string {
+    if (!this.baseUrl || /^https?:\/\//i.test(url)) {
+      return url;
+    }
+    return `${this.baseUrl}${url}`;
+  }
+
+  private headers(headers?: HeadersInit): HeadersInit | undefined {
+    if (!this.baseUrl) {
+      return headers;
+    }
+
+    const next = new Headers(headers);
+    next.set("x-memotask-client", "capacitor");
+    const sessionToken = this.sessionStorage?.get(SESSION_TOKEN_KEY);
+    if (sessionToken) {
+      next.set("authorization", `Bearer ${sessionToken}`);
+    }
+    return Object.fromEntries(next.entries());
   }
 }
 
 export const apiClient = new ApiClient();
+
+function normalizeBaseUrl(baseUrl: string): string {
+  return baseUrl.trim().replace(/\/$/, "");
+}
+
+function browserSessionStorage(): SessionStorageAdapter | null {
+  if (typeof globalThis.localStorage === "undefined") {
+    return null;
+  }
+
+  return {
+    get: (key) => globalThis.localStorage.getItem(key),
+    set: (key, value) => globalThis.localStorage.setItem(key, value),
+    remove: (key) => globalThis.localStorage.removeItem(key)
+  };
+}
 
 function assertPresent<T>(value: T | null | undefined): asserts value is T {
   if (value === null || value === undefined) {

@@ -48,9 +48,10 @@ export interface MemoRepository {
   updateDraft(userId: string, draftId: string, input: DraftInput, now: string): Promise<Memo | null>;
   listRecentDrafts(userId: string, limit: number): Promise<Memo[]>;
   publishMemo(userId: string, input: PublishMemoInput, now: string): Promise<Memo>;
-  listActiveMemos(userId: string): Promise<Memo[]>;
+  listActiveMemos(userId: string, tag?: string): Promise<Memo[]>;
   listHistoryMemos(userId: string): Promise<Memo[]>;
-  searchHistoryMemos(userId: string, query: string): Promise<Memo[]>;
+  searchHistoryMemos(userId: string, query: string, tag?: string): Promise<Memo[]>;
+  listTags(userId: string): Promise<string[]>;
   findTodo(userId: string, todoId: string): Promise<MemoTodo | null>;
   updateTodo(userId: string, todo: MemoTodo): Promise<MemoTodo>;
   createTodo(userId: string, memoId: string, input: { title: string; notes?: string | null; generatedByAi?: boolean }, now: string): Promise<MemoTodo>;

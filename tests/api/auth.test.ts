@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createApi } from "../../worker/api";
+import { readSessionToken } from "../../worker/auth/crypto";
 import { AuthService } from "../../worker/auth/service";
 import { MemoryAuthRepository } from "../../worker/auth/memory-auth-repository";
-import type { EmailMessage, EmailSender } from "../../worker/auth/types";
+import type { AuthSession, EmailMessage, EmailSender } from "../../worker/auth/types";
 import { MemoryRepository } from "../../worker/repository/memory-repository";
 
 const now = "2026-06-23T12:00:00.000Z";
@@ -24,6 +25,15 @@ function createAuthService() {
     appBaseUrl: "https://memotask.example.com"
   });
   return { repository, emailSender, service };
+}
+
+class CountingAuthRepository extends MemoryAuthRepository {
+  public sessionUpdateCount = 0;
+
+  async updateSession(session: AuthSession): Promise<AuthSession> {
+    this.sessionUpdateCount += 1;
+    return super.updateSession(session);
+  }
 }
 
 function verificationCodeFromLatestEmail(emailSender: RecordingEmailSender): string {
@@ -111,6 +121,27 @@ describe("AuthService", () => {
     await expect(service.login({ email: "owner@example.com", password: "wrong password" }, now)).rejects.toMatchObject({
       code: "INVALID_CREDENTIALS"
     });
+  });
+
+  it("does not write session last-seen on every authenticated request", async () => {
+    const repository = new CountingAuthRepository();
+    const emailSender = new RecordingEmailSender();
+    const service = new AuthService({
+      repository,
+      emailSender,
+      appBaseUrl: "https://memotask.example.com"
+    });
+    await service.register({ email: "owner@example.com", password: "memo123" }, now);
+    await service.verifyEmail(verificationCodeFromLatestEmail(emailSender), now);
+    const loggedIn = await service.login({ email: "owner@example.com", password: "memo123" }, now);
+    const token = readSessionToken(loggedIn.sessionCookie);
+    expect(token).toEqual(expect.any(String));
+
+    await service.resolveBearerSession(token, now);
+    await service.resolveBearerSession(token, "2026-06-23T12:04:00.000Z");
+    await service.resolveBearerSession(token, "2026-06-23T12:06:00.000Z");
+
+    expect(repository.sessionUpdateCount).toBe(1);
   });
 
   it("sends password reset email generically and rejects reused reset tokens", async () => {
@@ -219,6 +250,44 @@ describe("auth API protection", () => {
     });
     expect(logout.status).toBe(200);
     expect(logout.headers.get("set-cookie")).toContain("Max-Age=0");
+  });
+
+  it("allows Capacitor clients to use bearer sessions across CORS requests", async () => {
+    const { app, authService, emailSender } = createProtectedApi();
+    await authService.register({ email: "owner@example.com", password: "memo123" }, now);
+    await authService.verifyEmail(verificationCodeFromLatestEmail(emailSender), now);
+
+    const preflight = await app.request("/api/auth/me", {
+      method: "OPTIONS",
+      headers: {
+        origin: "https://localhost",
+        "access-control-request-method": "GET",
+        "access-control-request-headers": "authorization,x-memotask-client"
+      }
+    });
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get("access-control-allow-origin")).toBe("https://localhost");
+    expect(preflight.headers.get("access-control-allow-credentials")).toBe("true");
+
+    const login = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-memotask-client": "capacitor", origin: "https://localhost" },
+      body: JSON.stringify({ email: "owner@example.com", password: "memo123" })
+    });
+    const loginBody = await json(login);
+    expect(login.status).toBe(200);
+    expect(loginBody.sessionToken).toEqual(expect.any(String));
+    expect(login.headers.get("access-control-allow-origin")).toBe("https://localhost");
+
+    const me = await app.request("/api/auth/me", {
+      headers: {
+        authorization: `Bearer ${loginBody.sessionToken}`,
+        "x-memotask-client": "capacitor",
+        origin: "https://localhost"
+      }
+    });
+    expect(me.status).toBe(200);
+    await expect(json(me)).resolves.toMatchObject({ user: { email: "owner@example.com" } });
   });
 
   it("rejects protected memo APIs without a verified session", async () => {

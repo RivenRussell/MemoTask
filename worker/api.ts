@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { AuthService } from "./auth/service";
 import { EmailConfigurationError, EmailDeliveryError } from "./auth/email";
+import { readBearerToken, readSessionToken } from "./auth/crypto";
 import { AuthError, type PublicAuthUser } from "./auth/types";
 import { moveMemoToHistory, restoreMemoFromHistory, shouldAutoArchiveMemo, toggleTodoStatus } from "./domain/state-machines";
 import { MemoryRepository } from "./repository/memory-repository";
@@ -22,6 +23,7 @@ interface ApiOptions {
 
 const undoOperations = new Map<string, { memoIds: string[]; expiresAt: string }>();
 const AI_SETTINGS_REQUIRED_MESSAGE = "请先在设置里为当前账号填写接口地址、模型名称和 API 密钥";
+const CAPACITOR_ORIGINS = new Set(["capacitor://localhost", "http://localhost", "https://localhost"]);
 
 function getNow(options?: ApiOptions): string {
   return options?.now?.() ?? new Date().toISOString();
@@ -39,7 +41,9 @@ async function currentUser(
     return { user: null, response: null };
   }
 
-  const user = await options.authService.resolveSession(context.req.header("cookie"), getNow(options));
+  const user =
+    (await options.authService.resolveBearerSession(readBearerToken(context.req.header("authorization")), getNow(options))) ??
+    (await options.authService.resolveSession(context.req.header("cookie"), getNow(options)));
   if (!user) {
     return {
       user: null,
@@ -80,10 +84,48 @@ function authErrorResponse(error: unknown): Response {
   return Response.json({ error: { code: "AUTH_FAILED", message: "账号操作失败，请稍后重试" } }, { status: 500 });
 }
 
-function withSessionCookie(context: { json: (object: unknown, status?: number) => Response }, body: unknown, sessionCookie: string, status = 200): Response {
-  const response = context.json(body, status);
+function withSessionCookie(
+  context: { json: (object: unknown, status?: number) => Response; req: { header: (name: string) => string | undefined } },
+  body: unknown,
+  sessionCookie: string,
+  status = 200
+): Response {
+  const responseBody = isCapacitorRequest(context) ? { ...(body as Record<string, unknown>), sessionToken: readSessionToken(sessionCookie) } : body;
+  const response = context.json(responseBody, status);
   response.headers.append("set-cookie", sessionCookie);
   return response;
+}
+
+function isCapacitorRequest(context: { req: { header: (name: string) => string | undefined } }): boolean {
+  return context.req.header("x-memotask-client") === "capacitor";
+}
+
+function corsHeaders(request: Request): HeadersInit | null {
+  const origin = request.headers.get("origin");
+  if (!origin || !CAPACITOR_ORIGINS.has(origin)) {
+    return null;
+  }
+
+  return {
+    "access-control-allow-origin": origin,
+    "access-control-allow-credentials": "true",
+    "access-control-allow-methods": "GET,POST,PATCH,PUT,DELETE,OPTIONS",
+    "access-control-allow-headers": request.headers.get("access-control-request-headers") ?? "authorization,content-type,x-memotask-client",
+    "access-control-max-age": "86400",
+    vary: "Origin"
+  };
+}
+
+function withCors(response: Response, headers: HeadersInit | null): Response {
+  if (!headers) {
+    return response;
+  }
+
+  const next = new Response(response.body, response);
+  for (const [key, value] of Object.entries(headers)) {
+    next.headers.set(key, value);
+  }
+  return next;
 }
 
 function publicAiSettings(settings: AiSettings) {
@@ -215,6 +257,16 @@ export function createApi(options: ApiOptions = {}) {
   const repository = options.repository ?? new MemoryRepository();
   const app = new Hono();
 
+  app.use("/api/*", async (context, next) => {
+    const headers = corsHeaders(context.req.raw);
+    if (context.req.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: headers ?? undefined });
+    }
+
+    await next();
+    context.res = withCors(context.res, headers);
+  });
+
   app.get("/api/health", (context) => context.json({ ok: true }));
 
   app.post("/api/auth/register", async (context) => {
@@ -250,6 +302,7 @@ export function createApi(options: ApiOptions = {}) {
       return context.json({ ok: true });
     }
 
+    await options.authService.logoutBearerSession(readBearerToken(context.req.header("authorization")));
     const result = await options.authService.logout(context.req.header("cookie"));
     return withSessionCookie(context, { ok: true }, result.sessionCookie);
   });
@@ -259,7 +312,9 @@ export function createApi(options: ApiOptions = {}) {
       return context.json({ error: { code: "AUTH_UNAVAILABLE", message: "账号服务未启用" } }, 503);
     }
 
-    const user = await options.authService.resolveSession(context.req.header("cookie"), getNow(options));
+    const user =
+      (await options.authService.resolveBearerSession(readBearerToken(context.req.header("authorization")), getNow(options))) ??
+      (await options.authService.resolveSession(context.req.header("cookie"), getNow(options)));
     if (!user) {
       return context.json({ error: { code: "AUTH_REQUIRED", message: "请先登录" } }, 401);
     }
@@ -398,8 +453,16 @@ export function createApi(options: ApiOptions = {}) {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
     const userId = auth.user?.id ?? "default";
-    const memos = await repository.listActiveMemos(userId);
+    const memos = await repository.listActiveMemos(userId, context.req.query("tag"));
     return context.json({ memos });
+  });
+
+  app.get("/api/tags", async (context) => {
+    const auth = await currentUser(context, options);
+    if (auth.response) return auth.response;
+    const userId = auth.user?.id ?? "default";
+    const tags = await repository.listTags(userId);
+    return context.json({ tags });
   });
 
   app.get("/api/memos/:id", async (context) => {
@@ -495,11 +558,12 @@ export function createApi(options: ApiOptions = {}) {
     const now = getNow(options);
     const updatedTodo = await repository.updateTodo(userId, toggleTodoStatus(todo, now));
     const memo = await repository.findMemo(userId, updatedTodo.memoId);
+    let updatedMemo = memo;
     if (memo) {
       const nextContent = syncMarkdownCheckboxForTodo(memo.content, updatedTodo.id, updatedTodo.status);
       const nextTodos = memo.todos.map((candidate) => (candidate.id === updatedTodo.id ? updatedTodo : candidate));
       const shouldArchive = shouldAutoArchiveMemo(nextTodos, memo.autoArchiveSuppressedUntilChange);
-      await repository.saveMemo(
+      updatedMemo = await repository.saveMemo(
         userId,
         shouldArchive
           ? moveMemoToHistory({ ...memo, content: nextContent, todos: nextTodos }, "completed", now)
@@ -507,7 +571,7 @@ export function createApi(options: ApiOptions = {}) {
       );
     }
 
-    return context.json({ todo: updatedTodo });
+    return context.json({ todo: updatedTodo, memo: updatedMemo });
   });
 
   app.post("/api/memos/:memoId/todos", async (context) => {
@@ -599,7 +663,7 @@ export function createApi(options: ApiOptions = {}) {
     const auth = await currentUser(context, options);
     if (auth.response) return auth.response;
     const userId = auth.user?.id ?? "default";
-    const memos = await repository.searchHistoryMemos(userId, context.req.query("q") ?? "");
+    const memos = await repository.searchHistoryMemos(userId, context.req.query("q") ?? "", context.req.query("tag"));
     return context.json({ memos });
   });
 

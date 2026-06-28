@@ -1,0 +1,26 @@
+appId: cn.rrwks.memotask
+productName: MemoTask
+copyright: Copyright © 2026 RRWKS
+directories:
+  output: release/electron
+files:
+  - dist/**/*
+  - electron/**/*
+  - package.json
+asar: true
+electronDist: node_modules/electron/dist
+win:
+  signAndEditExecutable: false
+  signExecutable: false
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: MemoTask-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  packElevateHelper: false

@@ -4,12 +4,19 @@ import { D1Repository } from "../../worker/repository/d1-repository";
 
 class CannedD1Database {
   public readonly statements: Array<{ query: string; values: unknown[] }> = [];
+  public readonly reads: Array<{ method: "all" | "first"; query: string; values: unknown[] }> = [];
+  private readonly tags: Record<string, unknown>[];
+  private settings: Record<string, unknown> | null;
 
   constructor(
     private readonly memos: Record<string, unknown>[],
     private readonly todos: Record<string, unknown>[],
-    private settings: Record<string, unknown> | null = null
-  ) {}
+    tagsOrSettings: Record<string, unknown>[] | Record<string, unknown> | null = [],
+    settings: Record<string, unknown> | null = null
+  ) {
+    this.tags = Array.isArray(tagsOrSettings) ? tagsOrSettings : [];
+    this.settings = Array.isArray(tagsOrSettings) ? settings : tagsOrSettings;
+  }
 
   prepare(query: string): D1PreparedStatement {
     return new CannedD1Statement(this, query) as unknown as D1PreparedStatement;
@@ -30,7 +37,15 @@ class CannedD1Database {
     this.statements.push({ query, values });
   }
 
+  recordRead(method: "all" | "first", query: string, values: unknown[]) {
+    this.reads.push({ method, query, values });
+  }
+
   selectAll(query: string, values: unknown[] = []): Record<string, unknown>[] {
+    if (query.includes("FROM memo_tags")) {
+      const memoIds = values.filter((value): value is string => typeof value === "string");
+      return memoIds.length > 0 ? this.tags.filter((tag) => memoIds.includes(String(tag.memo_id))) : this.tags;
+    }
     if (query.includes("FROM memo_todos")) {
       const memoIds = values.filter((value): value is string => typeof value === "string");
       return memoIds.length > 0 ? this.todos.filter((todo) => memoIds.includes(String(todo.memo_id))) : this.todos;
@@ -81,10 +96,12 @@ class CannedD1Statement {
   }
 
   async first<T = Record<string, unknown>>(): Promise<T | null> {
+    this.db.recordRead("first", this.query, this.values);
     return this.db.selectFirst(this.query, this.values) as T | null;
   }
 
   async all<T = Record<string, unknown>>(): Promise<D1Result<T>> {
+    this.db.recordRead("all", this.query, this.values);
     return { success: true, meta: d1Meta(), results: this.db.selectAll(this.query, this.values) as T[] };
   }
 
@@ -150,7 +167,8 @@ describe("D1Repository", () => {
           completed_at: "2026-06-22T12:00:00.000Z",
           deleted_at: null
         }
-      ]
+      ],
+      [{ memo_id: "memo-1", name: "Work", normalized_name: "work", sort_order: 1 }]
     );
     const repository = new D1Repository(db as unknown as D1Database);
 
@@ -158,6 +176,7 @@ describe("D1Repository", () => {
 
     expect(memos).toHaveLength(1);
     expect(memos[0].todos[0]).toMatchObject({ title: "保持原位置", status: "done", sortOrder: 1 });
+    expect(memos[0].tags).toEqual(["Work"]);
   });
 
   it("persists saved memo state through D1 update statements", async () => {
@@ -168,7 +187,7 @@ describe("D1Repository", () => {
         id: "memo-1",
         userId: "default",
         title: "归档 Memo",
-        content: "content",
+        content: "content #archive",
         status: "active",
         historyReason: null,
         sortOrder: 1,
@@ -181,6 +200,7 @@ describe("D1Repository", () => {
         publishedAt: "2026-06-22T12:00:00.000Z",
         historyAt: null,
         deletedAt: null,
+        tags: [],
         todos: []
       },
       "archived",
@@ -190,8 +210,10 @@ describe("D1Repository", () => {
     await repository.saveMemo("default", archived);
 
     expect(db.statements.some((statement) => statement.query.includes("INTO memos"))).toBe(true);
+    expect(db.statements.some((statement) => statement.query.includes("INTO memo_tags"))).toBe(true);
     expect(db.statements.flatMap((statement) => statement.values)).toContain("history");
     expect(db.statements.flatMap((statement) => statement.values)).toContain("archived");
+    expect(db.statements.flatMap((statement) => statement.values)).toContain("archive");
   });
 
   it("stores AI settings with caller-provided ciphertext and no plaintext key", async () => {
@@ -214,6 +236,47 @@ describe("D1Repository", () => {
     expect(JSON.stringify(settings)).not.toContain("1234567890");
     expect(settings.encryptedApiKey).toBe("v1:iv:cipher");
     expect(settings.userId).toBe("default");
+  });
+
+  it("updates a todo without hydrating its parent memo first", async () => {
+    const db = new CannedD1Database(
+      [memoRow({ id: "memo-1" })],
+      [
+        {
+          id: "todo-1",
+          memo_id: "memo-1",
+          title: "D1 Todo",
+          notes: null,
+          status: "done",
+          sort_order: 1,
+          generated_by_ai: 0,
+          created_at: "2026-06-22T12:00:00.000Z",
+          updated_at: "2026-06-22T12:01:00.000Z",
+          completed_at: "2026-06-22T12:01:00.000Z",
+          deleted_at: null
+        }
+      ]
+    );
+    const repository = new D1Repository(db as unknown as D1Database);
+
+    await repository.updateTodo("default", {
+      id: "todo-1",
+      memoId: "memo-1",
+      title: "D1 Todo",
+      notes: null,
+      status: "done",
+      sortOrder: 1,
+      generatedByAi: false,
+      createdAt: "2026-06-22T12:00:00.000Z",
+      updatedAt: "2026-06-22T12:01:00.000Z",
+      completedAt: "2026-06-22T12:01:00.000Z",
+      deletedAt: null
+    });
+
+    expect(db.reads).toEqual([]);
+    expect(db.statements).toHaveLength(1);
+    expect(db.statements[0].query).toContain("UPDATE memo_todos");
+    expect(db.statements[0].query).toContain("EXISTS");
   });
 
   it("upgrades legacy short AI prompts stored in D1", async () => {

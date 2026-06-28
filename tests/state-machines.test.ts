@@ -27,6 +27,7 @@ function memo(overrides: Partial<Memo> = {}): Memo {
     publishedAt: "2026-06-22T10:00:00.000Z",
     historyAt: null,
     deletedAt: null,
+    tags: [],
     todos: [],
     ...overrides
   };

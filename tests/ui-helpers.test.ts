@@ -1,0 +1,96 @@
+import { describe, expect, it } from "vitest";
+import type { Memo } from "../src/types";
+import { addMemoTextTag, collectMemoTags, filterMemosByQuery, moveIdByDelta, removeMemoTextTag, toggleTodoInMemoList } from "../src/ui-helpers";
+
+function memo(overrides: Partial<Memo>): Memo {
+  return {
+    id: overrides.id ?? "memo-1",
+    userId: "user-1",
+    title: overrides.title ?? "开发网络嗅探工具",
+    content: overrides.content ?? "我想做一个网络嗅探工具。#project",
+    status: overrides.status ?? "active",
+    historyReason: overrides.historyReason ?? null,
+    sortOrder: overrides.sortOrder ?? 1,
+    lastActiveSortOrder: overrides.lastActiveSortOrder ?? null,
+    autoArchiveSuppressedUntilChange: overrides.autoArchiveSuppressedUntilChange ?? false,
+    aiState: overrides.aiState ?? "idle",
+    aiError: overrides.aiError ?? null,
+    createdAt: overrides.createdAt ?? "2026-06-28T00:00:00.000Z",
+    updatedAt: overrides.updatedAt ?? "2026-06-28T00:00:00.000Z",
+    publishedAt: overrides.publishedAt ?? "2026-06-28T00:00:00.000Z",
+    historyAt: overrides.historyAt ?? null,
+    deletedAt: overrides.deletedAt ?? null,
+    tags: overrides.tags ?? ["project"],
+    todos: overrides.todos ?? []
+  };
+}
+
+describe("UI helper contract behavior", () => {
+  it("adds tags by writing #tag text into memo content instead of creating a local tag field", () => {
+    const result = addMemoTextTag({ title: "部署计划 #Deploy", content: "整理 Cloudflare 部署" }, "cloudflare");
+
+    expect(result.title).toBe("部署计划 #Deploy");
+    expect(result.content).toBe("整理 Cloudflare 部署 #cloudflare");
+    expect(addMemoTextTag(result, "deploy")).toEqual(result);
+  });
+
+  it("removes matching tag tokens from title and content by normalized name", () => {
+    const result = removeMemoTextTag(
+      { title: "部署计划 #Deploy", content: "整理 #cloudflare 部署\n补充 #deploy 步骤" },
+      "deploy"
+    );
+
+    expect(result.title).toBe("部署计划");
+    expect(result.content).toBe("整理 #cloudflare 部署\n补充 步骤");
+  });
+
+  it("filters the active memo queue locally across title, content, tags, todos, and notes", () => {
+    const memos = [
+      memo({ id: "memo-1", title: "开发网络嗅探工具", tags: ["project"] }),
+      memo({
+        id: "memo-2",
+        title: "开一家汉堡店",
+        content: "选址和菜单 #ideas",
+        tags: ["ideas"],
+        todos: [{ id: "todo-1", memoId: "memo-2", title: "准备设备", notes: "冷链清单", status: "todo", sortOrder: 1, generatedByAi: true, createdAt: "", updatedAt: "", completedAt: null, deletedAt: null }]
+      })
+    ];
+
+    expect(filterMemosByQuery(memos, "冷链").map((item) => item.id)).toEqual(["memo-2"]);
+    expect(filterMemosByQuery(memos, "project").map((item) => item.id)).toEqual(["memo-1"]);
+    expect(filterMemosByQuery(memos, "  ").map((item) => item.id)).toEqual(["memo-1", "memo-2"]);
+  });
+
+  it("builds the sidebar tag list from API tags plus visible memo tags", () => {
+    const memos = [
+      memo({ id: "memo-1", title: "创建自媒体账号", content: "我想去创建一个自媒体账号 #牛马", tags: ["牛马"] }),
+      memo({ id: "memo-2", title: "PWA跨平台研究与开发 #Tech", tags: [] })
+    ];
+
+    const tags = collectMemoTags(["work"], memos);
+
+    expect(tags).toEqual(expect.arrayContaining(["Tech", "work", "牛马"]));
+    expect(tags).toHaveLength(3);
+  });
+
+  it("toggles a todo inside the local memo list for immediate feedback", () => {
+    const memos = [
+      memo({
+        id: "memo-1",
+        todos: [{ id: "todo-1", memoId: "memo-1", title: "选择并确定自媒体平台", notes: null, status: "todo", sortOrder: 1, generatedByAi: false, createdAt: "", updatedAt: "", completedAt: null, deletedAt: null }]
+      })
+    ];
+
+    const toggled = toggleTodoInMemoList(memos, "todo-1", "2026-06-28T08:00:00.000Z");
+
+    expect(toggled[0].todos[0].status).toBe("done");
+    expect(toggled[0].todos[0].completedAt).toBe("2026-06-28T08:00:00.000Z");
+    expect(memos[0].todos[0].status).toBe("todo");
+  });
+
+  it("moves memo ids by one step for lightweight reorder controls", () => {
+    expect(moveIdByDelta(["a", "b", "c"], "b", -1)).toEqual(["b", "a", "c"]);
+    expect(moveIdByDelta(["a", "b", "c"], "b", 1)).toEqual(["a", "c", "b"]);
+    expect(moveIdByDelta(["a", "b", "c"], "a", -1)).toEqual(["a", "b", "c"]);
+  });
+});
