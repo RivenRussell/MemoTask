@@ -2,7 +2,7 @@
 
 MemoTask 是一个低压力的个人 Memo 待办整理工具。它的核心思路很简单：先把脑子里的想法、计划、链接、琐事写成一条 Memo，再让人工智能把这条 Memo 内部拆成可执行的待办项。用户不需要一开始就想清楚分类、日期和提醒，只需要先记录，再整理。
 
-当前本地版本为 **v5.0.4**。v5.0.1 修复标签、AI 整理结果和同步状态的数据链路；v5.0.2 优化刷新反馈和主要操作忙碌状态；v5.0.3 改善 Todo 勾选、完成归档和标签录入体验；v5.0.4 将标签改为结构化数据并补充彩色标签 chip。注意：v5.0.4 目前只在本地代码中完成，尚未上传或部署到 Cloudflare。
+当前部署版本为 **v5.0.4**。v5.0.1 修复标签、AI 整理结果和同步状态的数据链路；v5.0.2 优化刷新反馈和主要操作忙碌状态；v5.0.3 改善 Todo 勾选、完成归档和标签录入体验；v5.0.4 将标签改为结构化数据并补充彩色标签 chip。v5.0.4 已上传并部署到 Cloudflare，并已重新生成 PC 端安装包和 Android APK。
 
 生产访问地址：
 
@@ -318,10 +318,22 @@ PC 端使用 Electron 壳：
 npm run electron:build
 ```
 
+v5.0.4 PC 安装包：
+
+```text
+release/electron-v5.0.4/MemoTask-5.0.4-x64.exe
+```
+
 Android 端使用 React 构建产物打包进 Capacitor APK：
 
 ```bash
 npm run android:build
+```
+
+v5.0.4 Android APK：
+
+```text
+release/electron-v5.0.4/MemoTask-5.0.4-android.apk
 ```
 
 ## 部署流程
@@ -338,7 +350,7 @@ npm run build
 npm run db:migrate:remote
 ```
 
-v5.0.2 已完成远程 D1 迁移和 Worker 部署。v5.0.3 不新增 D1 迁移，远程迁移检查结果为 `No migrations to apply`，已完成 Worker 部署。生产 Worker Version ID：`e46a8411-a24e-4009-86fe-80d81c6ec2dd`。v5.0.4 不新增 D1 迁移，尚未执行远程迁移或部署。
+v5.0.2 已完成远程 D1 迁移和 Worker 部署。v5.0.3 不新增 D1 迁移，远程迁移检查结果为 `No migrations to apply`，已完成 Worker 部署。生产 Worker Version ID：`e46a8411-a24e-4009-86fe-80d81c6ec2dd`。v5.0.4 不新增 D1 迁移，远程迁移检查结果为 `No migrations to apply`，已完成 Worker 部署。生产 Worker Version ID：`becb4d53-5dc2-4d42-a4c7-2aa4826711a4`。
 
 部署 Worker 和静态资源：
 
@@ -457,7 +469,7 @@ v4.2.4                  Markdown checkbox 与结构化 Todo 同步
 v5.0.1                  同步链路、AI 整理结果持久化和刷新入口修复
 v5.0.2                  刷新反馈、重复点击防护和操作忙碌状态优化
 v5.0.3                  Todo 勾选不卡顿、完成后即时归档、标签入口真实写入文本
-v5.0.4                  结构化标签提交、彩色标签 chip 和旧 #标签 兼容（本地待发布）
+v5.0.4                  结构化标签提交、彩色标签 chip 和旧 #标签 兼容（已部署，已出包）
 ```
 
 查看版本历史：

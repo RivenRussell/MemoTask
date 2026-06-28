@@ -10,7 +10,7 @@
 标签：未创建
 ```
 
-v5.0.4 是本地待发布标签体验优化版本，尚未上传或部署到 Cloudflare。当前线上用户仍使用 v5.0.3 部署版本。
+v5.0.4 是当前已部署标签体验优化版本，已上传并部署到 Cloudflare。当前线上用户使用 v5.0.4 部署版本。
 
 v5.0.4 主要变化：
 
@@ -19,7 +19,12 @@ v5.0.4 主要变化：
 - 标签 chip 增加稳定自动配色，侧边栏、卡片、草稿区和编辑区保持一致。
 - 移除前端 UI 对“把标签追加到正文”的 helper 依赖，降低后续回退风险。
 
-v5.0.4 不新增 D1 迁移，没有执行 `npm run worker:deploy`，也没有执行 `npm run db:migrate:remote`。
+v5.0.4 不新增 D1 迁移，远程迁移检查结果为 `No migrations to apply`。已执行 `npm run worker:deploy`，生产 Worker Version ID：`becb4d53-5dc2-4d42-a4c7-2aa4826711a4`。
+
+v5.0.4 已重新生成客户端安装包：
+
+- PC 端：`release/electron-v5.0.4/MemoTask-5.0.4-x64.exe`
+- Android 端：`release/electron-v5.0.4/MemoTask-5.0.4-android.apk`
 
 v5.0.3 主要变化：
 
@@ -72,7 +77,7 @@ v5.0.1 没有执行 `npm run worker:deploy`，也没有执行 `npm run db:migrat
 | `v5.0.1` | 本地版本 | 同步链路、AI 整理结果持久化和刷新入口修复 |
 | `v5.0.2` | 已部署版本 | 刷新反馈、重复点击防护和操作忙碌状态优化 |
 | `v5.0.3` | 已部署版本 | Todo 勾选不卡顿、完成后即时归档、标签入口真实写入文本 |
-| `v5.0.4` | 本地版本 | 结构化标签提交、彩色标签 chip 和旧 `#标签` 兼容；未创建标签，未部署 Cloudflare |
+| `v5.0.4` | 已部署版本 | 结构化标签提交、彩色标签 chip 和旧 `#标签` 兼容；已部署 Cloudflare，已生成 PC 与 Android 安装包 |
 
 ## v4 规划版本点
 
